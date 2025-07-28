@@ -7,6 +7,8 @@ export default function MiniBrowser() {
   const [showMenu, setShowMenu] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
+  const [typingText, setTypingText] = useState('');
+  const [typingPosition, setTypingPosition] = useState<{x: number, y: number} | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -179,6 +181,17 @@ export default function MiniBrowser() {
     
     if (e.key.length === 1 || specialKeys.includes(e.key)) {
       e.preventDefault();
+      
+      // Update typing placeholder
+      if (e.key === 'Enter') {
+        setTypingText('');
+        setTypingPosition(null);
+      } else if (e.key === 'Backspace') {
+        setTypingText(prev => prev.slice(0, -1));
+      } else if (e.key.length === 1) {
+        setTypingText(prev => prev + e.key);
+      }
+      
       wsRef.current?.send(
         JSON.stringify({ cmd: 'type', text: e.key })
       );
@@ -246,6 +259,10 @@ export default function MiniBrowser() {
     // Focus the content area to enable keyboard input
     // This won't interfere with clicks since we're using tabIndex={-1}
     contentRef.current?.focus();
+    
+    // Store click position for typing indicator
+    setTypingPosition({ x: e.clientX, y: e.clientY });
+    setTypingText('');
   };
 
   return (
@@ -441,6 +458,19 @@ export default function MiniBrowser() {
               draggable={false}
               alt="Browser content"
             />
+            {typingPosition && typingText && (
+              <div 
+                className="typing-placeholder"
+                style={{
+                  position: 'absolute',
+                  left: `${typingPosition.x - contentRef.current!.getBoundingClientRect().left}px`,
+                  top: `${typingPosition.y - contentRef.current!.getBoundingClientRect().top}px`,
+                  pointerEvents: 'none'
+                }}
+              >
+                {typingText}
+              </div>
+            )}
           </div>
         )}
       </div>
