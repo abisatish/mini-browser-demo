@@ -1,10 +1,11 @@
+
 import { useEffect, useRef, useState } from 'react';
 
 export default function MiniBrowser() {
   const [img, setImg] = useState('');
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
-  const wsRef = useRef<WebSocket>();
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
+  const wsRef = useRef<WebSocket | undefined>(undefined);
+  const reconnectTimeoutRef = useRef<number | undefined>(undefined);
 
   const connectWebSocket = () => {
     // Dynamic WebSocket URL for production
