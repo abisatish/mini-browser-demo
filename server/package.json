@@ -1,17 +1,23 @@
 {
   "name": "server",
   "version": "1.0.0",
-  "main": "index.js",
+  "type": "module",
+  "main": "server.js",
   "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "Mini browser server with Playwright",
   "dependencies": {
     "express": "^5.1.0",
     "playwright": "^1.54.1",
     "ws": "^8.18.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

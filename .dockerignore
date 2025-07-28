@@ -1,0 +1,14 @@
+node_modules
+client/node_modules
+server/node_modules
+client/dist
+.git
+.gitignore
+*.log
+.DS_Store
+.env
+.env.local
+.env.production
+README.md
+.vscode
+.idea
