@@ -7,9 +7,9 @@ export default function MiniBrowser() {
   const [showMenu, setShowMenu] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
+  const [isTypingActive, setIsTypingActive] = useState(false);
   const [typingText, setTypingText] = useState('');
   const [typingPosition, setTypingPosition] = useState<{x: number, y: number} | null>(null);
-  const [isTypingActive, setIsTypingActive] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -56,40 +56,22 @@ export default function MiniBrowser() {
             setUrl(msg.url);
           } else if (msg.type === 'clickResult') {
             // Handle click result - only enable typing for input fields
-            if (msg.isInputField && imgRef.current && contentRef.current) {
+            if (msg.isInputField) {
               setIsTypingActive(true);
-              
-              // Calculate position for typing indicator
-              const rect = imgRef.current.getBoundingClientRect();
-              const contentRect = contentRef.current.getBoundingClientRect();
-              
-              // Scale the cursor position to match the displayed image
-              const imgNaturalWidth = 1280;
-              const imgNaturalHeight = 720;
-              const scale = Math.min(rect.width / imgNaturalWidth, rect.height / imgNaturalHeight);
-              const displayedWidth = imgNaturalWidth * scale;
-              const displayedHeight = imgNaturalHeight * scale;
-              const offsetX = (rect.width - displayedWidth) / 2;
-              const offsetY = (rect.height - displayedHeight) / 2;
-              
-              const scaledX = (msg.cursorX / imgNaturalWidth) * displayedWidth + offsetX;
-              const scaledY = (msg.cursorY / imgNaturalHeight) * displayedHeight + offsetY;
-              
-              setTypingPosition({ 
-                x: scaledX + rect.left - contentRect.left,
-                y: scaledY + rect.top - contentRect.top
-              });
               setTypingText('');
+              // Don't set position from click - wait for actual cursor position
+              setTypingPosition(null);
             } else {
               setIsTypingActive(false);
-              setTypingPosition(null);
               setTypingText('');
+              setTypingPosition(null);
             }
-          } else if (msg.type === 'cursorUpdate' && imgRef.current && contentRef.current) {
-            // Update cursor position as user types
+          } else if (msg.type === 'cursorPosition' && imgRef.current && contentRef.current) {
+            // Set cursor position when we get it from server
             const rect = imgRef.current.getBoundingClientRect();
             const contentRect = contentRef.current.getBoundingClientRect();
             
+            // Scale cursor position to match displayed image
             const imgNaturalWidth = 1280;
             const imgNaturalHeight = 720;
             const scale = Math.min(rect.width / imgNaturalWidth, rect.height / imgNaturalHeight);
@@ -98,8 +80,8 @@ export default function MiniBrowser() {
             const offsetX = (rect.width - displayedWidth) / 2;
             const offsetY = (rect.height - displayedHeight) / 2;
             
-            const scaledX = (msg.cursorX / imgNaturalWidth) * displayedWidth + offsetX;
-            const scaledY = (msg.cursorY / imgNaturalHeight) * displayedHeight + offsetY;
+            const scaledX = (msg.x / imgNaturalWidth) * displayedWidth + offsetX;
+            const scaledY = (msg.y / imgNaturalHeight) * displayedHeight + offsetY;
             
             setTypingPosition({ 
               x: scaledX + rect.left - contentRect.left,
@@ -237,15 +219,14 @@ export default function MiniBrowser() {
     if (e.key.length === 1 || specialKeys.includes(e.key)) {
       e.preventDefault();
       
-      // Update typing placeholder (but not for password fields)
+      // Update typing text
       if (e.key === 'Enter' || e.key === 'Tab') {
+        setIsTypingActive(false);
         setTypingText('');
         setTypingPosition(null);
-        setIsTypingActive(false);
       } else if (e.key === 'Backspace') {
         setTypingText(prev => prev.slice(0, -1));
       } else if (e.key.length === 1) {
-        // Don't show typed characters if they might be in a password field
         setTypingText(prev => prev + e.key);
       }
       
@@ -521,7 +502,7 @@ export default function MiniBrowser() {
               draggable={false}
               alt="Browser content"
             />
-            {typingPosition && (
+            {typingPosition && isTypingActive && (
               <div 
                 className="typing-indicator-overlay"
                 style={{

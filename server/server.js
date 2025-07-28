@@ -371,10 +371,46 @@ const __dirname = path.dirname(__filename);
             // Send input field status to client
             ws.send(JSON.stringify({ 
               type: 'clickResult', 
-              isInputField: clickResult.isInput,
-              cursorX: clickResult.cursorX || m.x,
-              cursorY: clickResult.cursorY || m.y
+              isInputField: clickResult.isInput
             }));
+            
+            // If it's an input field, get accurate cursor position after a short delay
+            if (clickResult.isInput) {
+              setTimeout(async () => {
+                const cursorPos = await page.evaluate(() => {
+                  const activeElement = document.activeElement;
+                  if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+                    // Get caret position
+                    const selection = window.getSelection();
+                    if (selection.rangeCount > 0) {
+                      const range = selection.getRangeAt(0);
+                      const rect = range.getBoundingClientRect();
+                      if (rect.width === 0) {
+                        // No selection, use input position
+                        const inputRect = activeElement.getBoundingClientRect();
+                        return {
+                          x: inputRect.left + 5,
+                          y: inputRect.top + inputRect.height / 2
+                        };
+                      }
+                      return {
+                        x: rect.left,
+                        y: rect.top + rect.height / 2
+                      };
+                    }
+                  }
+                  return null;
+                });
+                
+                if (cursorPos) {
+                  ws.send(JSON.stringify({
+                    type: 'cursorPosition',
+                    x: cursorPos.x,
+                    y: cursorPos.y
+                  }));
+                }
+              }, 100);
+            }
             
             // Rapid screenshots after click for smooth feedback
             await sendScreenshot();
@@ -472,35 +508,43 @@ const __dirname = path.dirname(__filename);
               // Add human-like typing delay
               await page.keyboard.type(m.text, { delay: 50 + Math.random() * 50 });
               
+              // Send screenshot right away so user sees their typing
+              await sendScreenshot();
+              
               // Update cursor position after typing
-              const cursorUpdate = await page.evaluate(() => {
+              const cursorPos = await page.evaluate(() => {
                 const activeElement = document.activeElement;
                 if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
-                  const rect = activeElement.getBoundingClientRect();
+                  const inputRect = activeElement.getBoundingClientRect();
                   const style = window.getComputedStyle(activeElement);
                   const fontSize = parseFloat(style.fontSize);
-                  const padding = parseFloat(style.paddingLeft);
-                  const text = activeElement.value || '';
-                  const textWidth = text.length * (fontSize * 0.6);
+                  const paddingLeft = parseFloat(style.paddingLeft);
+                  
+                  // Create a temporary span to measure text width
+                  const span = document.createElement('span');
+                  span.style.font = style.font;
+                  span.style.visibility = 'hidden';
+                  span.style.position = 'absolute';
+                  span.textContent = activeElement.value || '';
+                  document.body.appendChild(span);
+                  const textWidth = span.getBoundingClientRect().width;
+                  document.body.removeChild(span);
                   
                   return {
-                    cursorX: rect.left + padding + Math.min(textWidth, rect.width - padding * 2),
-                    cursorY: rect.top + rect.height / 2
+                    x: inputRect.left + paddingLeft + Math.min(textWidth, inputRect.width - paddingLeft * 2),
+                    y: inputRect.top + inputRect.height / 2
                   };
                 }
                 return null;
               });
               
-              if (cursorUpdate) {
+              if (cursorPos) {
                 ws.send(JSON.stringify({
-                  type: 'cursorUpdate',
-                  cursorX: cursorUpdate.cursorX,
-                  cursorY: cursorUpdate.cursorY
+                  type: 'cursorPosition',
+                  x: cursorPos.x,
+                  y: cursorPos.y
                 }));
               }
-              
-              // Send screenshot right away so user sees their typing
-              await sendScreenshot();
             }
             break;
             
