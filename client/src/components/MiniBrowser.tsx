@@ -377,7 +377,7 @@ export default function MiniBrowser() {
           </span>
         </div>
         <div className="status-item">
-          <span className="status-text">Hybrid Stream</span>
+          <span className="status-text">20+ FPS Stream</span>
         </div>
         {isFocused && (
           <div className="status-item">

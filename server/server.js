@@ -86,24 +86,31 @@ const __dirname = path.dirname(__filename);
           case 'nav':
             console.log('Navigating to:', m.url);
             try {
-              // Send screenshot immediately to show loading state
+              // Send multiple screenshots during navigation for smooth experience
               await sendScreenshot();
               
-              // Navigate with more reasonable wait condition
-              await page.goto(m.url, { 
-                waitUntil: 'domcontentloaded', // Faster than networkidle
+              // Start navigation
+              const navPromise = page.goto(m.url, { 
+                waitUntil: 'domcontentloaded',
                 timeout: 30000 
               });
               
-              // Send screenshot after DOM loads
+              // Send screenshots during loading
+              setTimeout(() => sendScreenshot(), 100);
+              setTimeout(() => sendScreenshot(), 300);
+              setTimeout(() => sendScreenshot(), 500);
+              
+              // Wait for navigation
+              await navPromise;
               await sendScreenshot();
               
-              // Wait a bit more for full page render
-              await page.waitForTimeout(500);
-              await sendScreenshot();
+              // More screenshots as page settles
+              setTimeout(() => sendScreenshot(), 200);
+              setTimeout(() => sendScreenshot(), 400);
+              setTimeout(() => sendScreenshot(), 600);
+              setTimeout(() => sendScreenshot(), 800);
             } catch (navError) {
               console.error('Navigation error:', navError.message);
-              // Still send screenshot to show error page
               await sendScreenshot();
             }
             break;
@@ -117,17 +124,22 @@ const __dirname = path.dirname(__filename);
             console.log('Clicking at:', m.x, m.y);
             await page.mouse.click(m.x, m.y);
             
-            // Send immediate screenshot to show click effect
+            // Rapid screenshots after click for smooth feedback
             await sendScreenshot();
+            setTimeout(() => sendScreenshot(), 50);
+            setTimeout(() => sendScreenshot(), 150);
+            setTimeout(() => sendScreenshot(), 300);
             
-            // Then wait for any changes and send another
+            // Check if click triggered navigation
             try {
-              await page.waitForLoadState('domcontentloaded', { timeout: 1000 });
+              await page.waitForLoadState('domcontentloaded', { timeout: 500 });
+              // Navigation detected, send more screenshots
               await sendScreenshot();
+              setTimeout(() => sendScreenshot(), 200);
+              setTimeout(() => sendScreenshot(), 400);
             } catch {
-              // If no navigation, still send update after short delay
-              await page.waitForTimeout(200);
-              await sendScreenshot();
+              // No navigation, just UI update
+              setTimeout(() => sendScreenshot(), 500);
             }
             break;
             
@@ -224,10 +236,12 @@ const __dirname = path.dirname(__filename);
     sendScreenshot();
     
     // Regular screenshots for smooth experience (hybrid approach)
+    const targetFPS = parseInt(process.env.TARGET_FPS) || 20; // Increased default to 20 FPS
+    const frameInterval = 1000 / targetFPS;
+    
     const regularUpdateInterval = setInterval(async () => {
-      // Send screenshot every 250ms for smooth viewing
       await sendScreenshot();
-    }, 250); // 4 FPS baseline for smooth experience
+    }, frameInterval); // Configurable FPS (default 10)
 
     ws.on('close', () => {
       console.log('WebSocket connection closed');
