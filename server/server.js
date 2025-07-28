@@ -28,18 +28,47 @@ const __dirname = path.dirname(__filename);
   // Create persistent context to save cookies/logins
   const context = await browser.newContext({ 
     viewport: { width: 1280, height: 720 },
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    deviceScaleFactor: 1, // Lower for better performance on personal server
+    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    deviceScaleFactor: 1,
     hasTouch: false,
     javascriptEnabled: true,
+    locale: 'en-US',
+    timezoneId: 'America/New_York',
     // Save cookies and local storage
     storageState: {
       cookies: [],
       origins: []
+    },
+    // Additional browser context to appear more human
+    extraHTTPHeaders: {
+      'Accept-Language': 'en-US,en;q=0.9'
     }
   });
   
   const page = await context.newPage();
+  
+  // Hide automation indicators
+  await page.evaluateOnNewDocument(() => {
+    // Hide webdriver property
+    Object.defineProperty(navigator, 'webdriver', {
+      get: () => undefined
+    });
+    
+    // Add chrome object
+    window.chrome = {
+      runtime: {},
+    };
+    
+    // Add plugins
+    Object.defineProperty(navigator, 'plugins', {
+      get: () => [1, 2, 3, 4, 5]
+    });
+    
+    // Add languages
+    Object.defineProperty(navigator, 'languages', {
+      get: () => ['en-US', 'en']
+    });
+  });
   
   // Error handling for page crashes
   page.on('crash', () => {
@@ -133,6 +162,13 @@ const __dirname = path.dirname(__filename);
             
           case 'click':
             console.log('Clicking at:', m.x, m.y);
+            
+            // Add human-like delay before click
+            await page.waitForTimeout(50 + Math.random() * 100);
+            
+            // Move mouse to position first, then click (more human-like)
+            await page.mouse.move(m.x, m.y);
+            await page.waitForTimeout(20 + Math.random() * 30);
             await page.mouse.click(m.x, m.y);
             
             // Rapid screenshots after click for smooth feedback
@@ -191,8 +227,8 @@ const __dirname = path.dirname(__filename);
                 await sendScreenshot(100);
               }
             } else {
-              // Regular typing - send screenshot immediately for responsive feel
-              await page.keyboard.type(m.text);
+              // Add human-like typing delay
+              await page.keyboard.type(m.text, { delay: 50 + Math.random() * 50 });
               // Send screenshot right away so user sees their typing
               await sendScreenshot();
             }
