@@ -182,13 +182,14 @@ export default function MiniBrowser() {
     if (e.key.length === 1 || specialKeys.includes(e.key)) {
       e.preventDefault();
       
-      // Update typing placeholder
-      if (e.key === 'Enter') {
+      // Update typing placeholder (but not for password fields)
+      if (e.key === 'Enter' || e.key === 'Tab') {
         setTypingText('');
         setTypingPosition(null);
       } else if (e.key === 'Backspace') {
         setTypingText(prev => prev.slice(0, -1));
       } else if (e.key.length === 1) {
+        // Don't show typed characters if they might be in a password field
         setTypingText(prev => prev + e.key);
       }
       
@@ -270,9 +271,11 @@ export default function MiniBrowser() {
     // This won't interfere with clicks since we're using tabIndex={-1}
     contentRef.current?.focus();
     
-    // Store click position for typing indicator
-    setTypingPosition({ x: e.clientX, y: e.clientY });
-    setTypingText('');
+    // Don't show typing indicator immediately - let the actual input field handle it
+    setTimeout(() => {
+      setTypingPosition({ x: e.clientX, y: e.clientY });
+      setTypingText('');
+    }, 100);
   };
 
   return (
@@ -468,9 +471,9 @@ export default function MiniBrowser() {
               draggable={false}
               alt="Browser content"
             />
-            {typingPosition && typingText && (
+            {typingPosition && (
               <div 
-                className="typing-placeholder"
+                className="typing-indicator-overlay"
                 style={{
                   position: 'absolute',
                   left: `${typingPosition.x - contentRef.current!.getBoundingClientRect().left}px`,
@@ -478,7 +481,8 @@ export default function MiniBrowser() {
                   pointerEvents: 'none'
                 }}
               >
-                {typingText}
+                <span className="typing-text">{typingText}</span>
+                <span className="typing-cursor">|</span>
               </div>
             )}
           </div>

@@ -612,28 +612,31 @@
   }
   
   
-  .typing-placeholder {
-    background: rgba(255, 255, 255, 0.95);
-    border: 1px solid rgba(59, 130, 246, 0.3);
-    border-radius: 4px;
-    padding: 4px 8px;
+  .typing-indicator-overlay {
+    display: inline-flex;
+    align-items: baseline;
+    font-family: Arial, sans-serif;
     font-size: 14px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    color: #1f2937;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    animation: typing-fade-in 0.15s ease-out;
-    max-width: 300px;
-    word-wrap: break-word;
+    color: #000;
   }
   
-  @keyframes typing-fade-in {
-    from {
-      opacity: 0;
-      transform: translateY(-5px);
-    }
-    to {
+  .typing-text {
+    color: #000;
+  }
+  
+  .typing-cursor {
+    animation: blink 1s infinite;
+    font-weight: normal;
+    color: #000;
+    margin-left: 1px;
+  }
+  
+  @keyframes blink {
+    0%, 50% {
       opacity: 1;
-      transform: translateY(0);
+    }
+    51%, 100% {
+      opacity: 0;
     }
   }
   

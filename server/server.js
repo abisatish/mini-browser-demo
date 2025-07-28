@@ -36,11 +36,10 @@ const __dirname = path.dirname(__filename);
     javascriptEnabled: true,
     locale: 'en-US',
     timezoneId: 'America/Los_Angeles', // Pacific time - common for real users
-    // Save cookies and local storage
-    storageState: {
-      cookies: [],
-      origins: []
-    },
+    // Cookie persistence - saves sessions, NOT passwords!
+    storageState: process.env.COOKIE_FILE ? 
+      { path: process.env.COOKIE_FILE } : 
+      undefined,
     // Additional browser context to appear more human
     extraHTTPHeaders: {
       'Accept-Language': 'en-US,en;q=0.9'
@@ -120,6 +119,27 @@ const __dirname = path.dirname(__filename);
   });
   
   const page = await context.newPage();
+  
+  // Save cookies periodically (every 5 minutes)
+  if (process.env.COOKIE_FILE) {
+    setInterval(async () => {
+      try {
+        await context.storageState({ path: process.env.COOKIE_FILE });
+        console.log('Cookies saved (sessions only, no passwords)');
+      } catch (error) {
+        console.error('Failed to save cookies:', error);
+      }
+    }, 5 * 60 * 1000);
+  }
+  
+  // Handle popups for OAuth (Gmail, Google, etc)
+  context.on('page', async (popup) => {
+    console.log('Popup detected:', popup.url());
+    // Track popups but don't interfere with them
+    popup.on('close', () => {
+      console.log('Popup closed');
+    });
+  });
   
   // Override page visibility to always report visible
   await page.addInitScript(() => {
@@ -277,6 +297,22 @@ const __dirname = path.dirname(__filename);
             // Always do the regular click as well
             await page.mouse.click(m.x, m.y);
             
+            // For LinkedIn login, add extra delay and force focus
+            if (currentUrl.includes('linkedin.com')) {
+              await page.waitForTimeout(300);
+              // Try to focus the clicked element
+              await page.evaluate(({x, y}) => {
+                const element = document.elementFromPoint(x, y);
+                if (element && (element.tagName === 'INPUT' || element.tagName === 'BUTTON')) {
+                  element.focus();
+                  // For buttons, try clicking again
+                  if (element.tagName === 'BUTTON' || element.type === 'submit') {
+                    setTimeout(() => element.click(), 100);
+                  }
+                }
+              }, {x: m.x, y: m.y});
+            }
+            
             // Rapid screenshots after click for smooth feedback
             await sendScreenshot();
             setTimeout(() => sendScreenshot(), 50);
@@ -311,6 +347,17 @@ const __dirname = path.dirname(__filename);
             
           case 'type':
             console.log('Typing:', m.text);
+            
+            // Check if we're typing in a password field
+            const isPasswordField = await page.evaluate(() => {
+              const activeElement = document.activeElement;
+              return activeElement && activeElement.type === 'password';
+            });
+            
+            if (isPasswordField) {
+              console.log('Typing in password field');
+            }
+            
             const specialKeys = {
               'Enter': 'Enter',
               'Backspace': 'Backspace',
@@ -325,10 +372,22 @@ const __dirname = path.dirname(__filename);
             if (specialKeys[m.text]) {
               await page.keyboard.press(specialKeys[m.text]);
               
-              // Enter might trigger navigation
-              if (m.text === 'Enter') {
+              // Tab might move between fields
+              if (m.text === 'Tab') {
+                await page.waitForTimeout(200);
+                await sendScreenshot();
+              }
+              // Enter might trigger navigation or form submission
+              else if (m.text === 'Enter') {
+                // For LinkedIn, wait longer for login processing
+                const currentUrl = page.url();
+                if (currentUrl.includes('linkedin.com')) {
+                  console.log('LinkedIn login - waiting for response');
+                  await page.waitForTimeout(1000);
+                }
+                
                 try {
-                  await page.waitForLoadState('networkidle', { timeout: 2000 });
+                  await page.waitForLoadState('networkidle', { timeout: 3000 });
                 } catch {
                   await page.waitForTimeout(500);
                 }
@@ -448,6 +507,17 @@ const __dirname = path.dirname(__filename);
   // Graceful shutdown
   process.on('SIGTERM', async () => {
     console.log('SIGTERM received, shutting down gracefully...');
+    
+    // Save cookies before shutdown
+    if (process.env.COOKIE_FILE) {
+      try {
+        await context.storageState({ path: process.env.COOKIE_FILE });
+        console.log('Final cookie save completed');
+      } catch (error) {
+        console.error('Failed to save cookies on shutdown:', error);
+      }
+    }
+    
     server.close(() => {
       console.log('HTTP server closed');
     });
