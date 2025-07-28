@@ -3,7 +3,7 @@ import './MiniBrowser.css';
 
 export default function MiniBrowser() {
   const [img, setImg] = useState('');
-  const [url, setUrl] = useState('https://www.google.com');
+  const [url, setUrl] = useState('https://duckduckgo.com');
   const [showMenu, setShowMenu] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
@@ -137,17 +137,17 @@ export default function MiniBrowser() {
         );
         break;
       case 'newTab':
-        setUrl('https://www.google.com');
+        setUrl('https://duckduckgo.com');
         setIsNavigating(true);
         wsRef.current?.send(
-          JSON.stringify({ cmd: 'nav', url: 'https://www.google.com' })
+          JSON.stringify({ cmd: 'nav', url: 'https://duckduckgo.com' })
         );
         break;
       case 'home':
-        setUrl('https://www.google.com');
+        setUrl('https://duckduckgo.com');
         setIsNavigating(true);
         wsRef.current?.send(
-          JSON.stringify({ cmd: 'nav', url: 'https://www.google.com' })
+          JSON.stringify({ cmd: 'nav', url: 'https://duckduckgo.com' })
         );
         break;
     }

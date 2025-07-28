@@ -17,11 +17,13 @@ const __dirname = path.dirname(__filename);
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
+      '--disable-blink-features=AutomationControlled',
+      '--disable-web-security',
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--disable-site-isolation-trials',
       '--no-first-run',
-      '--no-zygote',
-      '--single-process',
-      '--disable-gpu'
+      '--disable-default-apps',
+      '--disable-popup-blocking'
     ]
   });
   
@@ -47,36 +49,55 @@ const __dirname = path.dirname(__filename);
   
   // Hide automation indicators before creating pages
   await context.addInitScript(() => {
-    // Hide webdriver property
-    Object.defineProperty(navigator, 'webdriver', {
-      get: () => undefined
-    });
+    // Override the webdriver property
+    delete Object.getPrototypeOf(navigator).webdriver;
     
-    // Add chrome object
+    // Add chrome object with proper properties
     window.chrome = {
-      runtime: {},
+      app: {},
+      runtime: {
+        connect: () => {},
+        sendMessage: () => {}
+      },
+      loadTimes: () => ({})
     };
     
-    // Add plugins
+    // Mock plugins
+    const mockPlugins = [
+      { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
+      { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
+      { name: 'Native Client', filename: 'internal-nacl-plugin' }
+    ];
+    
     Object.defineProperty(navigator, 'plugins', {
-      get: () => [1, 2, 3, 4, 5]
+      get: () => mockPlugins
     });
     
-    // Add languages
-    Object.defineProperty(navigator, 'languages', {
-      get: () => ['en-US', 'en']
-    });
+    // Override permissions
+    const originalQuery = window.navigator.permissions.query;
+    window.navigator.permissions.query = (parameters) => (
+      parameters.name === 'notifications' ?
+        Promise.resolve({ state: Notification.permission }) :
+        originalQuery(parameters)
+    );
+    
+    // Fix toString
+    window.navigator.toString = () => '[object Navigator]';
+    window.navigator.permissions.toString = () => '[object Permissions]';
   });
   
   const page = await context.newPage();
+  
+  // Track mouse position
+  let lastMousePos = { x: 640, y: 360 }; // Start in center
   
   // Error handling for page crashes
   page.on('crash', () => {
     console.log('Page crashed');
   });
   
-  await page.goto('https://www.google.com');
-  console.log('Browser page loaded - Google Search');
+  await page.goto('https://duckduckgo.com');
+  console.log('Browser page loaded - DuckDuckGo Search');
 
   const app = express();
   const wss = new WebSocketServer({ noServer: true });
@@ -177,9 +198,22 @@ const __dirname = path.dirname(__filename);
             // Add human-like delay before click
             await page.waitForTimeout(50 + Math.random() * 100);
             
-            // Move mouse to position first, then click (more human-like)
+            // More human-like mouse movement with curve
+            const steps = 5 + Math.floor(Math.random() * 5);
+            for (let i = 1; i <= steps; i++) {
+              const progress = i / steps;
+              // Add slight curve to movement
+              const curve = Math.sin(progress * Math.PI) * 20;
+              const x = lastMousePos.x + (m.x - lastMousePos.x) * progress + (i < steps/2 ? curve : -curve);
+              const y = lastMousePos.y + (m.y - lastMousePos.y) * progress;
+              await page.mouse.move(x, y);
+              await page.waitForTimeout(15 + Math.random() * 25);
+            }
+            
+            // Final move to exact position
             await page.mouse.move(m.x, m.y);
-            await page.waitForTimeout(20 + Math.random() * 30);
+            lastMousePos = { x: m.x, y: m.y };
+            await page.waitForTimeout(100 + Math.random() * 150);
             
             // For Google Images, use a more direct click approach
             const currentUrl = page.url();
@@ -224,6 +258,11 @@ const __dirname = path.dirname(__filename);
             break;
             
           case 'scroll':
+            // Add slight mouse movement during scroll (more natural)
+            const scrollX = lastMousePos.x + (Math.random() - 0.5) * 10;
+            const scrollY = lastMousePos.y + (Math.random() - 0.5) * 10;
+            await page.mouse.move(scrollX, scrollY);
+            lastMousePos = { x: scrollX, y: scrollY };
             await page.mouse.wheel(0, m.dy);
             
             // For scrolling, the regular interval will handle updates
