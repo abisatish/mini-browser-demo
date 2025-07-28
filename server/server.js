@@ -35,7 +35,7 @@ const __dirname = path.dirname(__filename);
     hasTouch: false,
     javascriptEnabled: true,
     locale: 'en-US',
-    timezoneId: 'America/New_York',
+    timezoneId: 'America/Los_Angeles', // Pacific time - common for real users
     // Save cookies and local storage
     storageState: {
       cookies: [],
@@ -84,9 +84,48 @@ const __dirname = path.dirname(__filename);
     // Fix toString
     window.navigator.toString = () => '[object Navigator]';
     window.navigator.permissions.toString = () => '[object Permissions]';
+    
+    // Override WebGL fingerprint
+    const getParameter = WebGLRenderingContext.prototype.getParameter;
+    WebGLRenderingContext.prototype.getParameter = function(parameter) {
+      if (parameter === 37445) {
+        return 'Intel Inc.';
+      }
+      if (parameter === 37446) {
+        return 'Intel Iris OpenGL Engine';
+      }
+      return getParameter.apply(this, arguments);
+    };
+    
+    // Override canvas fingerprint
+    const toDataURL = HTMLCanvasElement.prototype.toDataURL;
+    HTMLCanvasElement.prototype.toDataURL = function() {
+      if (this.width === 220 && this.height === 30) {
+        return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+      }
+      return toDataURL.apply(this, arguments);
+    };
+    
+    // Override screen properties
+    Object.defineProperty(window.screen, 'availTop', { get: () => 0 });
+    Object.defineProperty(window.screen, 'availLeft', { get: () => 0 });
+    
+    // Add battery API
+    navigator.getBattery = () => Promise.resolve({
+      charging: true,
+      chargingTime: 0,
+      dischargingTime: Infinity,
+      level: 1
+    });
   });
   
   const page = await context.newPage();
+  
+  // Override page visibility to always report visible
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(document, 'hidden', { get: () => false });
+    Object.defineProperty(document, 'visibilityState', { get: () => 'visible' });
+  });
   
   // Track mouse position
   let lastMousePos = { x: 640, y: 360 }; // Start in center
@@ -96,9 +135,9 @@ const __dirname = path.dirname(__filename);
     console.log('Page crashed');
   });
   
-  // Try Searx - an open source, privacy-respecting metasearch engine
-  await page.goto('https://searx.be');
-  console.log('Browser page loaded - Searx Search (no captchas, no blocking)');
+  // Go to Google with all stealth measures
+  await page.goto('https://www.google.com');
+  console.log('Browser page loaded - Google Search');
 
   const app = express();
   const wss = new WebSocketServer({ noServer: true });

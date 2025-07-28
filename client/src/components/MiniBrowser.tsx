@@ -3,7 +3,7 @@ import './MiniBrowser.css';
 
 export default function MiniBrowser() {
   const [img, setImg] = useState('');
-  const [url, setUrl] = useState('https://searx.be');
+  const [url, setUrl] = useState('https://www.google.com');
   const [showMenu, setShowMenu] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
@@ -137,17 +137,17 @@ export default function MiniBrowser() {
         );
         break;
       case 'newTab':
-        setUrl('https://searx.be');
+        setUrl('https://www.google.com');
         setIsNavigating(true);
         wsRef.current?.send(
-          JSON.stringify({ cmd: 'nav', url: 'https://searx.be' })
+          JSON.stringify({ cmd: 'nav', url: 'https://www.google.com' })
         );
         break;
       case 'home':
-        setUrl('https://searx.be');
+        setUrl('https://www.google.com');
         setIsNavigating(true);
         wsRef.current?.send(
-          JSON.stringify({ cmd: 'nav', url: 'https://searx.be' })
+          JSON.stringify({ cmd: 'nav', url: 'https://www.google.com' })
         );
         break;
     }
