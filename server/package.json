@@ -1,18 +1,17 @@
 {
-  "name": "mini-browser-server",
+  "name": "server",
   "version": "1.0.0",
-  "type": "module",
-  "main": "server.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
   "dependencies": {
-    "express": "^4.18.2",
-    "ws": "^8.14.2",
-    "playwright": "^1.40.0"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "express": "^5.1.0",
+    "playwright": "^1.54.1",
+    "ws": "^8.18.3"
   }
 }
