@@ -8,16 +8,34 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 (async () => {
-  const browser  = await chromium.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-  });
-  const context  = await browser.newContext({ 
-    viewport: { width: 1280, height: 720 },
-    deviceScaleFactor: 1
-  });
-  const page     = await context.newPage();
-  await page.goto('https://ai.google/');
+  let browser;
+  let context;
+  let page;
+
+  try {
+    console.log('Launching browser...');
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    });
+    
+    console.log('Creating browser context...');
+    context = await browser.newContext({ 
+      viewport: { width: 1280, height: 720 },
+      deviceScaleFactor: 1
+    });
+    
+    console.log('Creating new page...');
+    page = await context.newPage();
+    
+    console.log('Navigating to initial page...');
+    await page.goto('https://ai.google/');
+    console.log('Browser setup completed successfully');
+  } catch (error) {
+    console.error('Failed to setup browser:', error.message);
+    console.error('Please ensure Playwright browsers are installed: npx playwright install chromium');
+    process.exit(1);
+  }
 
   const app      = express();
   const wss      = new WebSocketServer({ noServer: true });
