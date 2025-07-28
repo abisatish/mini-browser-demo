@@ -45,10 +45,8 @@ const __dirname = path.dirname(__filename);
     }
   });
   
-  const page = await context.newPage();
-  
-  // Hide automation indicators
-  await page.evaluateOnNewDocument(() => {
+  // Hide automation indicators before creating pages
+  await context.addInitScript(() => {
     // Hide webdriver property
     Object.defineProperty(navigator, 'webdriver', {
       get: () => undefined
@@ -69,6 +67,8 @@ const __dirname = path.dirname(__filename);
       get: () => ['en-US', 'en']
     });
   });
+  
+  const page = await context.newPage();
   
   // Error handling for page crashes
   page.on('crash', () => {
@@ -163,12 +163,44 @@ const __dirname = path.dirname(__filename);
           case 'click':
             console.log('Clicking at:', m.x, m.y);
             
+            // Debug: Log what element we're clicking on
+            const clickedElement = await page.evaluate(({x, y}) => {
+              const elem = document.elementFromPoint(x, y);
+              return {
+                tag: elem ? elem.tagName : 'none',
+                class: elem ? elem.className : 'none',
+                text: elem ? elem.textContent?.substring(0, 50) : 'none'
+              };
+            }, {x: m.x, y: m.y});
+            console.log('Clicking on element:', clickedElement);
+            
             // Add human-like delay before click
             await page.waitForTimeout(50 + Math.random() * 100);
             
             // Move mouse to position first, then click (more human-like)
             await page.mouse.move(m.x, m.y);
             await page.waitForTimeout(20 + Math.random() * 30);
+            
+            // For Google Images, use a more direct click approach
+            const currentUrl = page.url();
+            if (currentUrl.includes('google.com/search') && currentUrl.includes('tbm=isch')) {
+              // Google Images - dispatch click event directly to ensure it works
+              await page.evaluate(({x, y}) => {
+                const element = document.elementFromPoint(x, y);
+                if (element) {
+                  const clickEvent = new MouseEvent('click', {
+                    view: window,
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y
+                  });
+                  element.dispatchEvent(clickEvent);
+                }
+              }, {x: m.x, y: m.y});
+            }
+            
+            // Always do the regular click as well
             await page.mouse.click(m.x, m.y);
             
             // Rapid screenshots after click for smooth feedback

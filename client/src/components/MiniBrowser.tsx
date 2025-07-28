@@ -233,8 +233,18 @@ export default function MiniBrowser() {
     const scaledX = Math.round((x / displayedWidth) * imgNaturalWidth);
     const scaledY = Math.round((y / displayedHeight) * imgNaturalHeight);
     
+    // Log for debugging
+    console.log('Click debug:', {
+      containerSize: { w: containerWidth, h: containerHeight },
+      displayedSize: { w: displayedWidth, h: displayedHeight },
+      offset: { x: offsetX, y: offsetY },
+      clickPos: { x, y },
+      scaledPos: { x: scaledX, y: scaledY }
+    });
+    
     // Ensure coordinates are within bounds
     if (scaledX < 0 || scaledX > imgNaturalWidth || scaledY < 0 || scaledY > imgNaturalHeight) {
+      console.log('Click outside image bounds');
       return;
     }
     
