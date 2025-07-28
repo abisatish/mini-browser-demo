@@ -74,15 +74,19 @@ const __dirname = path.dirname(__filename);
         
         switch (m.cmd) {
           case 'nav':
+            console.log('Navigating to:', m.url);
             await page.goto(m.url, { waitUntil: 'domcontentloaded' });
             break;
           case 'click':
+            console.log('Clicking at:', m.x, m.y);
             await page.mouse.click(m.x, m.y);
             break;
           case 'scroll':
+            console.log('Scrolling by:', m.dy);
             await page.mouse.wheel(0, m.dy);
             break;
           case 'type':
+            console.log('Typing:', m.text);
             await page.keyboard.type(m.text);
             break;
         }
@@ -91,7 +95,7 @@ const __dirname = path.dirname(__filename);
       }
     });
 
-    // Stream screenshots
+    // Stream screenshots at 30 FPS for smoother experience
     let screenshotInterval;
     const startScreenshots = async () => {
       screenshotInterval = setInterval(async () => {
@@ -99,7 +103,7 @@ const __dirname = path.dirname(__filename);
           if (ws.readyState === ws.OPEN) {
             const screenshot = await page.screenshot({ 
               type: 'jpeg', 
-              quality: 60,
+              quality: 85, // Higher quality
               fullPage: false 
             });
             ws.send(screenshot);
@@ -110,7 +114,7 @@ const __dirname = path.dirname(__filename);
           console.error('Screenshot error:', error);
           clearInterval(screenshotInterval);
         }
-      }, 200);
+      }, 33); // 30 FPS (1000ms / 30fps = 33ms)
     };
     
     startScreenshots();
