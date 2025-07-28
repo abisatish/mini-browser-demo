@@ -47,26 +47,14 @@ export default function MiniBrowser() {
     };
     
     ws.onmessage = e => {
-      // Check if it's a JSON message (URL update) or binary (screenshot)
-      if (typeof e.data === 'string') {
-        try {
-          const data = JSON.parse(e.data);
-          if (data.type === 'urlUpdate') {
-            setUrl(data.url);
-          }
-        } catch (err) {
-          // Not JSON, ignore
-        }
-      } else {
-        // Binary data - screenshot
-        const blob = new Blob([e.data], { type: 'image/jpeg' });
-        const newImg = URL.createObjectURL(blob);
-        setImg(prevImg => {
-          if (prevImg) URL.revokeObjectURL(prevImg);
-          return newImg;
-        });
-        setIsNavigating(false);
-      }
+      // All messages are binary (screenshots)
+      const blob = new Blob([e.data], { type: 'image/jpeg' });
+      const newImg = URL.createObjectURL(blob);
+      setImg(prevImg => {
+        if (prevImg) URL.revokeObjectURL(prevImg);
+        return newImg;
+      });
+      setIsNavigating(false);
     };
 
     ws.onerror = () => {
@@ -89,11 +77,18 @@ export default function MiniBrowser() {
   // Handle URL navigation
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (connectionStatus !== 'connected') return;
+    if (connectionStatus !== 'connected' || !url.trim()) return;
+    
+    // Add http:// if no protocol specified
+    let navUrl = url.trim();
+    if (!navUrl.startsWith('http://') && !navUrl.startsWith('https://')) {
+      navUrl = 'https://' + navUrl;
+    }
     
     setIsNavigating(true);
+    console.log('Navigating to:', navUrl);
     wsRef.current?.send(
-      JSON.stringify({ cmd: 'nav', url: url })
+      JSON.stringify({ cmd: 'nav', url: navUrl })
     );
   };
 
