@@ -25,12 +25,18 @@ const __dirname = path.dirname(__filename);
     ]
   });
   
+  // Create persistent context to save cookies/logins
   const context = await browser.newContext({ 
     viewport: { width: 1280, height: 720 },
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    deviceScaleFactor: 2, // Higher quality rendering
+    deviceScaleFactor: 1, // Lower for better performance on personal server
     hasTouch: false,
-    javascriptEnabled: true
+    javascriptEnabled: true,
+    // Save cookies and local storage
+    storageState: {
+      cookies: [],
+      origins: []
+    }
   });
   
   const page = await context.newPage();
@@ -68,8 +74,9 @@ const __dirname = path.dirname(__filename);
   });
 
   // WebSocket connection handler
-  wss.on('connection', (ws, req) => {
+  wss.on('connection', (ws) => {
     console.log('New WebSocket connection established');
+    let privacyMode = false;
     
     ws.on('message', async (msg) => {
       try {
@@ -80,21 +87,50 @@ const __dirname = path.dirname(__filename);
             console.log('Navigating to:', m.url);
             try {
               await page.goto(m.url, { 
-                waitUntil: 'domcontentloaded',
+                waitUntil: 'networkidle',
                 timeout: 30000 
               });
+              // Send screenshot after navigation completes
+              await sendScreenshot();
             } catch (navError) {
               console.error('Navigation error:', navError.message);
+              // Still send screenshot to show error page
+              await sendScreenshot();
             }
             break;
+            
+          case 'privacy':
+            privacyMode = m.enabled;
+            console.log('Privacy mode:', privacyMode ? 'ON' : 'OFF');
+            break;
+            
           case 'click':
             console.log('Clicking at:', m.x, m.y);
             await page.mouse.click(m.x, m.y);
+            
+            // Wait for potential navigation or DOM changes
+            try {
+              await page.waitForLoadState('networkidle', { timeout: 1000 });
+            } catch {
+              // If no network activity, just wait a bit for DOM updates
+              await page.waitForTimeout(300);
+            }
+            
+            // Send screenshot after click action settles
+            await sendScreenshot();
             break;
+            
           case 'scroll':
-            console.log('Scrolling by:', m.dy);
+            // Debounce scroll events
+            if (scrollDebounceTimer) clearTimeout(scrollDebounceTimer);
+            
             await page.mouse.wheel(0, m.dy);
+            
+            scrollDebounceTimer = setTimeout(async () => {
+              await sendScreenshot();
+            }, 150); // Wait 150ms after last scroll event
             break;
+            
           case 'type':
             console.log('Typing:', m.text);
             const specialKeys = {
@@ -110,9 +146,33 @@ const __dirname = path.dirname(__filename);
             
             if (specialKeys[m.text]) {
               await page.keyboard.press(specialKeys[m.text]);
+              
+              // Enter might trigger navigation
+              if (m.text === 'Enter') {
+                try {
+                  await page.waitForLoadState('networkidle', { timeout: 2000 });
+                } catch {
+                  await page.waitForTimeout(500);
+                }
+                await sendScreenshot();
+              } else {
+                // For other special keys, send screenshot quickly
+                await sendScreenshot(100);
+              }
             } else {
+              // Regular typing - debounce screenshots
               await page.keyboard.type(m.text);
+              
+              if (typeDebounceTimer) clearTimeout(typeDebounceTimer);
+              typeDebounceTimer = setTimeout(async () => {
+                await sendScreenshot();
+              }, 200); // Wait 200ms after last keystroke
             }
+            break;
+            
+          case 'requestScreenshot':
+            // Allow client to manually request a screenshot
+            await sendScreenshot();
             break;
         }
       } catch (error) {
@@ -120,86 +180,67 @@ const __dirname = path.dirname(__filename);
       }
     });
 
-    // Stream screenshots at 15 FPS to reduce server load
-    let screenshotInterval;
-    let lastScreenshotTime = 0;
-    const targetFPS = 15; // Reduced from 30 to be less demanding
-    const frameInterval = 1000 / targetFPS;
+    // Event-driven screenshots (like ChatGPT) instead of continuous streaming
+    let lastScrollTime = 0;
+    let scrollDebounceTimer = null;
+    let typeDebounceTimer = null;
     
-    const startScreenshots = async () => {
-      screenshotInterval = setInterval(async () => {
-        const now = Date.now();
+    // Send screenshot with error handling
+    const sendScreenshot = async (addDelay = 0) => {
+      try {
+        if (ws.readyState !== ws.OPEN || privacyMode) return;
         
-        // Skip frame if we're running behind
-        if (now - lastScreenshotTime < frameInterval * 0.8) {
-          return;
+        // Add optional delay for page to settle
+        if (addDelay > 0) {
+          await new Promise(resolve => setTimeout(resolve, addDelay));
         }
         
-        try {
-          if (ws.readyState === ws.OPEN) {
-            // Add timeout to prevent hanging
-            const screenshotPromise = page.screenshot({ 
-              type: 'jpeg', 
-              quality: 85, // Slightly lower quality for better performance
-              fullPage: false,
-              clip: { x: 0, y: 0, width: 1280, height: 720 },
-              timeout: 5000 // 5 second timeout
-            });
-            
-            const screenshot = await Promise.race([
-              screenshotPromise,
-              new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Screenshot timeout')), 5000)
-              )
-            ]);
-            
-            ws.send(screenshot);
-            lastScreenshotTime = now;
-          } else {
-            clearInterval(screenshotInterval);
-          }
-        } catch (error) {
-          console.error('Screenshot error:', error.message);
-          
-          // Try to recover by reloading the page
-          if (error.message.includes('Timeout') || error.message.includes('Screenshot timeout')) {
-            console.log('Attempting to recover from screenshot timeout...');
-            try {
-              // Navigate to current URL to refresh
-              const currentUrl = page.url();
-              await page.goto(currentUrl, { 
-                waitUntil: 'domcontentloaded',
-                timeout: 10000 
-              });
-              console.log('Page refreshed successfully');
-            } catch (recoveryError) {
-              console.error('Recovery failed:', recoveryError.message);
-              // If recovery fails, navigate to home page
-              try {
-                await page.goto('https://www.google.com', { 
-                  waitUntil: 'domcontentloaded',
-                  timeout: 10000 
-                });
-                console.log('Navigated to Google as fallback');
-              } catch (fallbackError) {
-                console.error('Fallback navigation failed:', fallbackError.message);
-              }
-            }
+        const screenshot = await page.screenshot({ 
+          type: 'jpeg', 
+          quality: 85,
+          fullPage: false,
+          clip: { x: 0, y: 0, width: 1280, height: 720 },
+          timeout: 5000
+        });
+        
+        ws.send(screenshot);
+      } catch (error) {
+        console.error('Screenshot error:', error.message);
+        
+        // Only try recovery for persistent errors
+        if (error.message.includes('Timeout')) {
+          try {
+            await page.reload({ waitUntil: 'domcontentloaded', timeout: 10000 });
+            console.log('Page reloaded after screenshot timeout');
+          } catch (reloadError) {
+            console.error('Reload failed:', reloadError.message);
           }
         }
-      }, frameInterval);
+      }
     };
     
-    startScreenshots();
+    // Send initial screenshot
+    sendScreenshot();
+    
+    // Periodic check for auto-updating pages (much less frequent)
+    const updateCheckInterval = setInterval(async () => {
+      // Only check if page might have auto-updated content
+      const currentUrl = page.url();
+      if (currentUrl.includes('gmail') || currentUrl.includes('twitter') || currentUrl.includes('chat')) {
+        await sendScreenshot();
+      }
+    }, 5000); // Every 5 seconds for dynamic pages
 
     ws.on('close', () => {
       console.log('WebSocket connection closed');
-      clearInterval(screenshotInterval);
+      clearInterval(updateCheckInterval);
+      if (scrollDebounceTimer) clearTimeout(scrollDebounceTimer);
+      if (typeDebounceTimer) clearTimeout(typeDebounceTimer);
     });
     
     ws.on('error', (error) => {
       console.error('WebSocket error:', error);
-      clearInterval(screenshotInterval);
+      clearInterval(updateCheckInterval);
     });
   });
 

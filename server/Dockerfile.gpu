@@ -1,0 +1,52 @@
+# GPU-accelerated Dockerfile for high FPS streaming
+FROM nvidia/cuda:11.8.0-base-ubuntu22.04
+
+# Install Node.js and dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    gnupg \
+    wget \
+    # Chrome dependencies
+    libnss3 \
+    libatk-bridge2.0-0 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2 \
+    # GPU acceleration dependencies
+    mesa-utils \
+    libgl1-mesa-glx \
+    libgl1-mesa-dri \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js 20
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs
+
+# Install Chrome for GPU acceleration
+RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && echo "deb http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+RUN npm ci --only=production
+
+# Copy application files
+COPY . .
+
+# Environment variables for GPU acceleration
+ENV DISPLAY=:99
+ENV TARGET_FPS=60
+ENV JPEG_QUALITY=85
+ENV USE_SHARP=true
+
+# Start with GPU support
+CMD ["node", "server-optimized.js"]

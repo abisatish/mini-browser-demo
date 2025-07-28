@@ -8,6 +8,7 @@ export default function MiniBrowser() {
   const [isNavigating, setIsNavigating] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [isFocused, setIsFocused] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -41,6 +42,8 @@ export default function MiniBrowser() {
     ws.onopen = () => {
       console.log('WebSocket connected');
       setConnectionStatus('connected');
+      // Request initial screenshot
+      ws.send(JSON.stringify({ cmd: 'requestScreenshot' }));
     };
     
     ws.onmessage = e => {
@@ -50,6 +53,8 @@ export default function MiniBrowser() {
         if (prevImg) URL.revokeObjectURL(prevImg);
         return newImg;
       });
+      setIsLoading(false);
+      setIsNavigating(false);
     };
 
     ws.onerror = () => {
@@ -78,8 +83,6 @@ export default function MiniBrowser() {
     wsRef.current?.send(
       JSON.stringify({ cmd: 'nav', url: url })
     );
-    // Reset navigation state after 2 seconds
-    setTimeout(() => setIsNavigating(false), 2000);
   };
 
   // Handle menu actions
@@ -93,7 +96,6 @@ export default function MiniBrowser() {
         wsRef.current?.send(
           JSON.stringify({ cmd: 'nav', url: url })
         );
-        setTimeout(() => setIsNavigating(false), 2000);
         break;
       case 'newTab':
         setUrl('https://www.google.com');
@@ -101,7 +103,6 @@ export default function MiniBrowser() {
         wsRef.current?.send(
           JSON.stringify({ cmd: 'nav', url: 'https://www.google.com' })
         );
-        setTimeout(() => setIsNavigating(false), 2000);
         break;
       case 'home':
         setUrl('https://www.google.com');
@@ -109,7 +110,6 @@ export default function MiniBrowser() {
         wsRef.current?.send(
           JSON.stringify({ cmd: 'nav', url: 'https://www.google.com' })
         );
-        setTimeout(() => setIsNavigating(false), 2000);
         break;
     }
   };
@@ -173,6 +173,9 @@ export default function MiniBrowser() {
         document.body.removeChild(clickIndicator);
       }
     }, 800);
+    
+    // Show subtle loading state
+    setIsLoading(true);
     
     // Send click command
     wsRef.current?.send(
@@ -360,13 +363,29 @@ export default function MiniBrowser() {
             </div>
           </div>
         ) : (
-          <img
-            ref={imgRef}
-            src={img}
-            className="browser-image"
-            draggable={false}
-            alt="Browser content"
-          />
+          <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+            <img
+              ref={imgRef}
+              src={img}
+              className="browser-image"
+              draggable={false}
+              alt="Browser content"
+              style={{ opacity: isLoading ? 0.8 : 1, transition: 'opacity 0.2s' }}
+            />
+            {isLoading && (
+              <div style={{
+                position: 'absolute',
+                top: '10px',
+                right: '10px',
+                width: '24px',
+                height: '24px',
+                borderRadius: '50%',
+                border: '2px solid rgba(59, 130, 246, 0.3)',
+                borderTopColor: '#3b82f6',
+                animation: 'spin 0.8s linear infinite'
+              }} />
+            )}
+          </div>
         )}
       </div>
       
