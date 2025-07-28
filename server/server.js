@@ -97,12 +97,19 @@ const __dirname = path.dirname(__filename);
             break;
           case 'type':
             console.log('Typing:', m.text);
-            if (m.text === 'Enter') {
-              await page.keyboard.press('Enter');
-            } else if (m.text === 'Backspace') {
-              await page.keyboard.press('Backspace');
-            } else if (m.text === 'Tab') {
-              await page.keyboard.press('Tab');
+            const specialKeys = {
+              'Enter': 'Enter',
+              'Backspace': 'Backspace',
+              'Tab': 'Tab',
+              'Delete': 'Delete',
+              'ArrowLeft': 'ArrowLeft',
+              'ArrowRight': 'ArrowRight',
+              'ArrowUp': 'ArrowUp',
+              'ArrowDown': 'ArrowDown'
+            };
+            
+            if (specialKeys[m.text]) {
+              await page.keyboard.press(specialKeys[m.text]);
             } else {
               await page.keyboard.type(m.text);
             }

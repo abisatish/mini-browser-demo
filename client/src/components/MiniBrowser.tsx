@@ -7,9 +7,11 @@ export default function MiniBrowser() {
   const [showMenu, setShowMenu] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
+  const [isFocused, setIsFocused] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -125,7 +127,13 @@ export default function MiniBrowser() {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (connectionStatus !== 'connected') return;
     
-    if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Enter' || e.key === 'Tab') {
+    // Don't capture keyboard input if user is typing in URL bar
+    if (e.target instanceof HTMLInputElement) return;
+    
+    // Handle special keys
+    const specialKeys = ['Backspace', 'Enter', 'Tab', 'Delete', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
+    
+    if (e.key.length === 1 || specialKeys.includes(e.key)) {
       e.preventDefault();
       wsRef.current?.send(
         JSON.stringify({ cmd: 'type', text: e.key })
@@ -149,12 +157,18 @@ export default function MiniBrowser() {
     document.body.appendChild(clickIndicator);
     
     setTimeout(() => {
-      document.body.removeChild(clickIndicator);
-    }, 600);
+      if (document.body.contains(clickIndicator)) {
+        document.body.removeChild(clickIndicator);
+      }
+    }, 800);
     
+    // Send click command
     wsRef.current?.send(
       JSON.stringify({ cmd: 'click', x, y })
     );
+    
+    // Focus the browser content to enable keyboard input
+    e.currentTarget.focus();
   };
 
   return (
@@ -287,10 +301,13 @@ export default function MiniBrowser() {
       
       {/* Content Area */}
       <div 
-        className="browser-content"
+        ref={contentRef}
+        className={`browser-content ${isFocused ? 'focused' : ''}`}
         onWheel={handleWheel}
         onKeyDown={handleKeyDown}
         onClick={handleClick}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
         tabIndex={0}
       >
         {connectionStatus === 'connecting' ? (
@@ -352,6 +369,12 @@ export default function MiniBrowser() {
         <div className="status-item">
           <span className="status-text">30 FPS Stream</span>
         </div>
+        {isFocused && (
+          <div className="status-item">
+            <div className="typing-indicator"></div>
+            <span className="status-text">Ready to type</span>
+          </div>
+        )}
       </div>
     </div>
   );
