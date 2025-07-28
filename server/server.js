@@ -190,6 +190,26 @@ const __dirname = path.dirname(__filename);
             // Allow client to manually request a screenshot
             await sendScreenshot();
             break;
+            
+          case 'goBack':
+            console.log('Going back');
+            try {
+              await page.goBack({ timeout: 5000 });
+              await sendScreenshot();
+            } catch (error) {
+              console.log('Cannot go back');
+            }
+            break;
+            
+          case 'goForward':
+            console.log('Going forward');
+            try {
+              await page.goForward({ timeout: 5000 });
+              await sendScreenshot();
+            } catch (error) {
+              console.log('Cannot go forward');
+            }
+            break;
         }
       } catch (error) {
         console.error('Error processing command:', error);
@@ -236,7 +256,7 @@ const __dirname = path.dirname(__filename);
     sendScreenshot();
     
     // Regular screenshots for smooth experience (hybrid approach)
-    const targetFPS = parseInt(process.env.TARGET_FPS) || 20; // Increased default to 20 FPS
+    const targetFPS = parseInt(process.env.TARGET_FPS) || 10; // 10 FPS for Railway
     const frameInterval = 1000 / targetFPS;
     
     const regularUpdateInterval = setInterval(async () => {

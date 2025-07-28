@@ -8,6 +8,7 @@ export default function MiniBrowser() {
   const [isNavigating, setIsNavigating] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [isFocused, setIsFocused] = useState(false);
+  const [currentInputField, setCurrentInputField] = useState<string>('');
   const wsRef = useRef<WebSocket | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -89,6 +90,16 @@ export default function MiniBrowser() {
     if (connectionStatus !== 'connected') return;
     
     switch (action) {
+      case 'back':
+        wsRef.current?.send(
+          JSON.stringify({ cmd: 'goBack' })
+        );
+        break;
+      case 'forward':
+        wsRef.current?.send(
+          JSON.stringify({ cmd: 'goForward' })
+        );
+        break;
       case 'refresh':
         setIsNavigating(true);
         wsRef.current?.send(
@@ -176,6 +187,17 @@ export default function MiniBrowser() {
     wsRef.current?.send(
       JSON.stringify({ cmd: 'click', x, y })
     );
+    
+    // Try to detect if clicking on an input field (basic heuristic)
+    // This is a simple approach - in production you'd want better detection
+    const rect = imgRef.current.getBoundingClientRect();
+    const relativeY = y / rect.height;
+    
+    // If clicking in the middle area where forms usually are
+    if (relativeY > 0.2 && relativeY < 0.8) {
+      setCurrentInputField('Search or input field');
+      setTimeout(() => setCurrentInputField(''), 3000); // Clear after 3 seconds
+    }
     
     // Focus the browser content to enable keyboard input
     e.currentTarget.focus();
@@ -358,13 +380,33 @@ export default function MiniBrowser() {
             </div>
           </div>
         ) : (
-          <img
-            ref={imgRef}
-            src={img}
-            className="browser-image"
-            draggable={false}
-            alt="Browser content"
-          />
+          <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+            <img
+              ref={imgRef}
+              src={img}
+              className="browser-image"
+              draggable={false}
+              alt="Browser content"
+            />
+            {isFocused && currentInputField && (
+              <div style={{
+                position: 'absolute',
+                bottom: '20px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                background: 'rgba(0, 0, 0, 0.8)',
+                color: 'white',
+                padding: '8px 20px',
+                borderRadius: '20px',
+                fontSize: '14px',
+                fontWeight: '500',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                animation: 'fade-in 0.2s ease-out'
+              }}>
+                Typing in: {currentInputField}
+              </div>
+            )}
+          </div>
         )}
       </div>
       
