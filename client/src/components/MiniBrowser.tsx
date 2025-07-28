@@ -8,7 +8,6 @@ export default function MiniBrowser() {
   const [isNavigating, setIsNavigating] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [isFocused, setIsFocused] = useState(false);
-  const [currentInputField, setCurrentInputField] = useState<string>('');
   const wsRef = useRef<WebSocket | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -77,7 +76,12 @@ export default function MiniBrowser() {
   // Handle URL navigation
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (connectionStatus !== 'connected' || !url.trim()) return;
+    console.log('URL Submit triggered, URL:', url, 'Connection:', connectionStatus);
+    
+    if (connectionStatus !== 'connected' || !url.trim()) {
+      console.log('Navigation blocked - not connected or empty URL');
+      return;
+    }
     
     // Add http:// if no protocol specified
     let navUrl = url.trim();
@@ -86,10 +90,15 @@ export default function MiniBrowser() {
     }
     
     setIsNavigating(true);
-    console.log('Navigating to:', navUrl);
-    wsRef.current?.send(
-      JSON.stringify({ cmd: 'nav', url: navUrl })
-    );
+    console.log('Sending navigation command to:', navUrl);
+    
+    try {
+      wsRef.current?.send(
+        JSON.stringify({ cmd: 'nav', url: navUrl })
+      );
+    } catch (error) {
+      console.error('Error sending navigation command:', error);
+    }
   };
 
   // Handle menu actions
@@ -196,15 +205,8 @@ export default function MiniBrowser() {
       JSON.stringify({ cmd: 'click', x, y })
     );
     
-    // Try to detect if clicking on an input field (basic heuristic)
-    // This is a simple approach - in production you'd want better detection
-    const relativeY = y / rect.height;
-    
-    // If clicking in the middle area where forms usually are
-    if (relativeY > 0.2 && relativeY < 0.8) {
-      setCurrentInputField('Search or input field');
-      setTimeout(() => setCurrentInputField(''), 3000); // Clear after 3 seconds
-    }
+    // Remove the typing indicator logic - it's interfering with clicks
+    // We'll let the focus state handle this instead
     
     // Focus the browser content to enable keyboard input
     e.currentTarget.focus();
@@ -279,13 +281,13 @@ export default function MiniBrowser() {
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
-                  handleUrlSubmit(e as any);
+                  e.preventDefault();
+                  handleUrlSubmit(e);
                 }
               }}
               className="url-input"
               placeholder="Search or enter address"
               disabled={connectionStatus !== 'connected'}
-              autoFocus
             />
             {isNavigating ? (
               <div className="url-loading">
@@ -296,6 +298,10 @@ export default function MiniBrowser() {
                 type="submit"
                 disabled={connectionStatus !== 'connected'}
                 className="url-submit"
+                onClick={(e) => {
+                  e.preventDefault();
+                  handleUrlSubmit(e);
+                }}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -401,24 +407,6 @@ export default function MiniBrowser() {
               draggable={false}
               alt="Browser content"
             />
-            {isFocused && currentInputField && (
-              <div style={{
-                position: 'absolute',
-                bottom: '20px',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                background: 'rgba(0, 0, 0, 0.8)',
-                color: 'white',
-                padding: '8px 20px',
-                borderRadius: '20px',
-                fontSize: '14px',
-                fontWeight: '500',
-                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-                animation: 'fade-in 0.2s ease-out'
-              }}>
-                Typing in: {currentInputField}
-              </div>
-            )}
           </div>
         )}
       </div>
