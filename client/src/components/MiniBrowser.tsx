@@ -9,6 +9,7 @@ export default function MiniBrowser() {
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [typingText, setTypingText] = useState('');
   const [typingPosition, setTypingPosition] = useState<{x: number, y: number} | null>(null);
+  const [isTypingActive, setIsTypingActive] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -53,6 +54,57 @@ export default function MiniBrowser() {
           const msg = JSON.parse(e.data);
           if (msg.type === 'url') {
             setUrl(msg.url);
+          } else if (msg.type === 'clickResult') {
+            // Handle click result - only enable typing for input fields
+            if (msg.isInputField && imgRef.current && contentRef.current) {
+              setIsTypingActive(true);
+              
+              // Calculate position for typing indicator
+              const rect = imgRef.current.getBoundingClientRect();
+              const contentRect = contentRef.current.getBoundingClientRect();
+              
+              // Scale the cursor position to match the displayed image
+              const imgNaturalWidth = 1280;
+              const imgNaturalHeight = 720;
+              const scale = Math.min(rect.width / imgNaturalWidth, rect.height / imgNaturalHeight);
+              const displayedWidth = imgNaturalWidth * scale;
+              const displayedHeight = imgNaturalHeight * scale;
+              const offsetX = (rect.width - displayedWidth) / 2;
+              const offsetY = (rect.height - displayedHeight) / 2;
+              
+              const scaledX = (msg.cursorX / imgNaturalWidth) * displayedWidth + offsetX;
+              const scaledY = (msg.cursorY / imgNaturalHeight) * displayedHeight + offsetY;
+              
+              setTypingPosition({ 
+                x: scaledX + rect.left - contentRect.left,
+                y: scaledY + rect.top - contentRect.top
+              });
+              setTypingText('');
+            } else {
+              setIsTypingActive(false);
+              setTypingPosition(null);
+              setTypingText('');
+            }
+          } else if (msg.type === 'cursorUpdate' && imgRef.current && contentRef.current) {
+            // Update cursor position as user types
+            const rect = imgRef.current.getBoundingClientRect();
+            const contentRect = contentRef.current.getBoundingClientRect();
+            
+            const imgNaturalWidth = 1280;
+            const imgNaturalHeight = 720;
+            const scale = Math.min(rect.width / imgNaturalWidth, rect.height / imgNaturalHeight);
+            const displayedWidth = imgNaturalWidth * scale;
+            const displayedHeight = imgNaturalHeight * scale;
+            const offsetX = (rect.width - displayedWidth) / 2;
+            const offsetY = (rect.height - displayedHeight) / 2;
+            
+            const scaledX = (msg.cursorX / imgNaturalWidth) * displayedWidth + offsetX;
+            const scaledY = (msg.cursorY / imgNaturalHeight) * displayedHeight + offsetY;
+            
+            setTypingPosition({ 
+              x: scaledX + rect.left - contentRect.left,
+              y: scaledY + rect.top - contentRect.top
+            });
           }
         } catch (error) {
           console.error('Error parsing JSON message:', error);
@@ -176,6 +228,9 @@ export default function MiniBrowser() {
     // Don't capture keyboard input if user is typing in URL bar
     if (e.target instanceof HTMLInputElement) return;
     
+    // Only allow typing if we've clicked on an input field
+    if (!isTypingActive) return;
+    
     // Handle special keys
     const specialKeys = ['Backspace', 'Enter', 'Tab', 'Delete', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
     
@@ -186,6 +241,7 @@ export default function MiniBrowser() {
       if (e.key === 'Enter' || e.key === 'Tab') {
         setTypingText('');
         setTypingPosition(null);
+        setIsTypingActive(false);
       } else if (e.key === 'Backspace') {
         setTypingText(prev => prev.slice(0, -1));
       } else if (e.key.length === 1) {
@@ -270,12 +326,6 @@ export default function MiniBrowser() {
     // Focus the content area to enable keyboard input
     // This won't interfere with clicks since we're using tabIndex={-1}
     contentRef.current?.focus();
-    
-    // Don't show typing indicator immediately - let the actual input field handle it
-    setTimeout(() => {
-      setTypingPosition({ x: e.clientX, y: e.clientY });
-      setTypingText('');
-    }, 100);
   };
 
   return (
@@ -476,8 +526,8 @@ export default function MiniBrowser() {
                 className="typing-indicator-overlay"
                 style={{
                   position: 'absolute',
-                  left: `${typingPosition.x - contentRef.current!.getBoundingClientRect().left}px`,
-                  top: `${typingPosition.y - contentRef.current!.getBoundingClientRect().top}px`,
+                  left: `${typingPosition.x}px`,
+                  top: `${typingPosition.y}px`,
                   pointerEvents: 'none'
                 }}
               >

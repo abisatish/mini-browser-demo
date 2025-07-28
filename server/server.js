@@ -135,10 +135,20 @@ const __dirname = path.dirname(__filename);
   // Handle popups for OAuth (Gmail, Google, etc)
   context.on('page', async (popup) => {
     console.log('Popup detected:', popup.url());
-    // Track popups but don't interfere with them
-    popup.on('close', () => {
-      console.log('Popup closed');
-    });
+    
+    // For auth popups, handle them properly
+    if (popup.url().includes('accounts.google.com') || popup.url().includes('oauth')) {
+      // Set viewport for popup
+      await popup.setViewportSize({ width: 800, height: 600 });
+      
+      // Make sure popup stays open
+      popup.on('close', () => {
+        console.log('Auth popup closed');
+      });
+      
+      // Don't block the popup
+      await popup.bringToFront();
+    }
   });
   
   // Override page visibility to always report visible
@@ -158,6 +168,30 @@ const __dirname = path.dirname(__filename);
   // Go to Google with all stealth measures
   await page.goto('https://www.google.com');
   console.log('Browser page loaded - Google Search');
+  
+  // Listen for navigation requests that might be blocked
+  page.on('framenavigated', (frame) => {
+    if (frame === page.mainFrame()) {
+      console.log('Page navigated to:', frame.url());
+    }
+  });
+  
+  // Handle navigation errors
+  page.on('pageerror', error => {
+    console.error('Page error:', error.message);
+  });
+  
+  // Log console messages for debugging
+  page.on('console', msg => {
+    if (msg.type() === 'error') {
+      console.log('Browser console error:', msg.text());
+    }
+  });
+  
+  // Handle failed requests
+  page.on('requestfailed', request => {
+    console.log('Request failed:', request.url(), request.failure()?.errorText);
+  });
 
   const app = express();
   const wss = new WebSocketServer({ noServer: true });
@@ -297,21 +331,50 @@ const __dirname = path.dirname(__filename);
             // Always do the regular click as well
             await page.mouse.click(m.x, m.y);
             
-            // For LinkedIn login, add extra delay and force focus
-            if (currentUrl.includes('linkedin.com')) {
-              await page.waitForTimeout(300);
-              // Try to focus the clicked element
-              await page.evaluate(({x, y}) => {
-                const element = document.elementFromPoint(x, y);
-                if (element && (element.tagName === 'INPUT' || element.tagName === 'BUTTON')) {
+            // Check if we clicked on an input field and get cursor position
+            const clickResult = await page.evaluate(({x, y}) => {
+              const element = document.elementFromPoint(x, y);
+              if (element) {
+                // Check if it's an input field or contenteditable
+                const isInput = element.tagName === 'INPUT' || 
+                               element.tagName === 'TEXTAREA' || 
+                               element.contentEditable === 'true' ||
+                               element.closest('[contenteditable="true"]');
+                
+                if (isInput) {
                   element.focus();
-                  // For buttons, try clicking again
-                  if (element.tagName === 'BUTTON' || element.type === 'submit') {
-                    setTimeout(() => element.click(), 100);
+                  
+                  // Get the cursor position for input/textarea
+                  if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
+                    const rect = element.getBoundingClientRect();
+                    const style = window.getComputedStyle(element);
+                    const fontSize = parseFloat(style.fontSize);
+                    const padding = parseFloat(style.paddingLeft);
+                    
+                    // Estimate cursor position based on text length
+                    const text = element.value || '';
+                    const textWidth = text.length * (fontSize * 0.6); // Rough estimate
+                    
+                    return {
+                      isInput: true,
+                      cursorX: rect.left + padding + textWidth,
+                      cursorY: rect.top + rect.height / 2
+                    };
                   }
+                  
+                  return { isInput: true, cursorX: x, cursorY: y };
                 }
-              }, {x: m.x, y: m.y});
-            }
+              }
+              return { isInput: false };
+            }, {x: m.x, y: m.y});
+            
+            // Send input field status to client
+            ws.send(JSON.stringify({ 
+              type: 'clickResult', 
+              isInputField: clickResult.isInput,
+              cursorX: clickResult.cursorX || m.x,
+              cursorY: clickResult.cursorY || m.y
+            }));
             
             // Rapid screenshots after click for smooth feedback
             await sendScreenshot();
@@ -321,12 +384,21 @@ const __dirname = path.dirname(__filename);
             
             // Check if click triggered navigation
             try {
-              await page.waitForLoadState('domcontentloaded', { timeout: 500 });
-              // Navigation detected
-              sendUrlUpdate();
-              await sendScreenshot();
-              setTimeout(() => sendScreenshot(), 200);
-              setTimeout(() => sendScreenshot(), 400);
+              // For auth pages, wait longer and don't block
+              if (currentUrl.includes('accounts.google.com') || currentUrl.includes('signin')) {
+                setTimeout(async () => {
+                  await sendScreenshot();
+                  sendUrlUpdate();
+                }, 1000);
+                setTimeout(() => sendScreenshot(), 2000);
+              } else {
+                await page.waitForLoadState('domcontentloaded', { timeout: 500 });
+                // Navigation detected
+                sendUrlUpdate();
+                await sendScreenshot();
+                setTimeout(() => sendScreenshot(), 200);
+                setTimeout(() => sendScreenshot(), 400);
+              }
             } catch {
               // No navigation, just UI update
               setTimeout(() => sendScreenshot(), 500);
@@ -399,6 +471,34 @@ const __dirname = path.dirname(__filename);
             } else {
               // Add human-like typing delay
               await page.keyboard.type(m.text, { delay: 50 + Math.random() * 50 });
+              
+              // Update cursor position after typing
+              const cursorUpdate = await page.evaluate(() => {
+                const activeElement = document.activeElement;
+                if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+                  const rect = activeElement.getBoundingClientRect();
+                  const style = window.getComputedStyle(activeElement);
+                  const fontSize = parseFloat(style.fontSize);
+                  const padding = parseFloat(style.paddingLeft);
+                  const text = activeElement.value || '';
+                  const textWidth = text.length * (fontSize * 0.6);
+                  
+                  return {
+                    cursorX: rect.left + padding + Math.min(textWidth, rect.width - padding * 2),
+                    cursorY: rect.top + rect.height / 2
+                  };
+                }
+                return null;
+              });
+              
+              if (cursorUpdate) {
+                ws.send(JSON.stringify({
+                  type: 'cursorUpdate',
+                  cursorX: cursorUpdate.cursorX,
+                  cursorY: cursorUpdate.cursorY
+                }));
+              }
+              
               // Send screenshot right away so user sees their typing
               await sendScreenshot();
             }
