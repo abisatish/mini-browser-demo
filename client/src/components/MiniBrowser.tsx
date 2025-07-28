@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 export default function MiniBrowser() {
   const [img, setImg] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [url, setUrl] = useState('https://www.google.com');
+  const [url, setUrl] = useState('https://accounts.google.com/signin');
   const [showMenu, setShowMenu] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
@@ -73,9 +73,9 @@ export default function MiniBrowser() {
         );
         break;
       case 'newTab':
-        setUrl('https://www.google.com');
+        setUrl('https://accounts.google.com/signin');
         wsRef.current?.send(
-          JSON.stringify({ cmd: 'nav', url: 'https://www.google.com' })
+          JSON.stringify({ cmd: 'nav', url: 'https://accounts.google.com/signin' })
         );
         break;
       case 'devTools':
@@ -91,6 +91,16 @@ export default function MiniBrowser() {
     wsRef.current?.send(
       JSON.stringify({ cmd: 'scroll', dy: scrollAmount })
     );
+  };
+
+  // Handle keyboard events for typing
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLImageElement>) => {
+    if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      wsRef.current?.send(
+        JSON.stringify({ cmd: 'type', text: e.key })
+      );
+    }
   };
 
   // Simple click→send mapping (original working approach)
@@ -199,6 +209,7 @@ export default function MiniBrowser() {
             src={img}
             onClick={handleClick}
             onWheel={handleWheel}
+            onKeyDown={handleKeyDown}
             className="w-full h-full object-contain select-none cursor-pointer"
             draggable={false}
             alt="Browser content"

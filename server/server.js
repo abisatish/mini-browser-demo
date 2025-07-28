@@ -41,7 +41,7 @@ const __dirname = path.dirname(__filename);
     await page.goto('https://www.google.com');
   });
   
-  await page.goto('https://www.google.com');
+  await page.goto('https://accounts.google.com/signin');
   console.log('Browser page loaded');
 
   const app = express();
