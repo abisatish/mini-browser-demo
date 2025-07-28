@@ -198,6 +198,12 @@ export default function MiniBrowser() {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     
+    // Scale coordinates to match the actual browser viewport (1280x720)
+    const scaleX = 1280 / rect.width;
+    const scaleY = 720 / rect.height;
+    const scaledX = Math.round(x * scaleX);
+    const scaledY = Math.round(y * scaleY);
+    
     // Visual feedback for click
     const clickIndicator = document.createElement('div');
     clickIndicator.className = 'click-indicator';
@@ -211,9 +217,9 @@ export default function MiniBrowser() {
       }
     }, 800);
     
-    // Send click command
+    // Send click command with scaled coordinates
     wsRef.current?.send(
-      JSON.stringify({ cmd: 'click', x, y })
+      JSON.stringify({ cmd: 'click', x: scaledX, y: scaledY })
     );
     
     // Focus the content area to enable keyboard input
