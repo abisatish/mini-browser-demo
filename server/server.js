@@ -42,12 +42,8 @@ const __dirname = path.dirname(__filename);
   const page = await context.newPage();
   
   // Error handling for page crashes
-  page.on('crash', async () => {
-    console.log('Page crashed, creating new page...');
-    const newPage = await context.newPage();
-    Object.setPrototypeOf(page, Object.getPrototypeOf(newPage));
-    Object.assign(page, newPage);
-    await page.goto('https://www.google.com');
+  page.on('crash', () => {
+    console.log('Page crashed');
   });
   
   await page.goto('https://www.google.com');
@@ -78,6 +74,23 @@ const __dirname = path.dirname(__filename);
     console.log('New WebSocket connection established');
     let privacyMode = false;
     
+    // Send current URL when connection established
+    const sendUrlUpdate = () => {
+      try {
+        const currentUrl = page.url();
+        ws.send(JSON.stringify({ type: 'url', url: currentUrl }));
+      } catch (error) {
+        console.error('Error sending URL update:', error);
+      }
+    };
+    
+    // Monitor URL changes (remove previous listener if any)
+    const urlChangeHandler = () => {
+      sendUrlUpdate();
+    };
+    page.removeAllListeners('framenavigated');
+    page.on('framenavigated', urlChangeHandler);
+    
     ws.on('message', async (msg) => {
       try {
         const m = JSON.parse(msg.toString());
@@ -95,6 +108,7 @@ const __dirname = path.dirname(__filename);
                 timeout: 30000 
               }).then(() => {
                 console.log('Navigation completed to:', m.url);
+                sendUrlUpdate();
                 sendScreenshot();
               }).catch((err) => {
                 console.error('Navigation failed:', err.message);
@@ -119,7 +133,17 @@ const __dirname = path.dirname(__filename);
             
           case 'click':
             console.log('Clicking at:', m.x, m.y);
+            
+            // First try a normal mouse click
             await page.mouse.click(m.x, m.y);
+            
+            // Also dispatch a click event in case the element needs it
+            await page.evaluate(({ x, y }) => {
+              const element = document.elementFromPoint(x, y);
+              if (element) {
+                element.click();
+              }
+            }, { x: m.x, y: m.y });
             
             // Rapid screenshots after click for smooth feedback
             await sendScreenshot();
@@ -131,6 +155,7 @@ const __dirname = path.dirname(__filename);
             try {
               await page.waitForLoadState('domcontentloaded', { timeout: 500 });
               // Navigation detected
+              sendUrlUpdate();
               await sendScreenshot();
               setTimeout(() => sendScreenshot(), 200);
               setTimeout(() => sendScreenshot(), 400);
@@ -230,27 +255,22 @@ const __dirname = path.dirname(__filename);
           quality: 85,
           fullPage: false,
           clip: { x: 0, y: 0, width: 1280, height: 720 },
-          timeout: 5000
+          timeout: 3000,
+          animations: 'disabled'  // Don't wait for animations/fonts
         });
         
-        ws.send(screenshot);
+        ws.send(screenshot, { binary: true });
       } catch (error) {
         console.error('Screenshot error:', error.message);
         
-        // Only try recovery for persistent errors
-        if (error.message.includes('Timeout')) {
-          try {
-            await page.reload({ waitUntil: 'domcontentloaded', timeout: 10000 });
-            console.log('Page reloaded after screenshot timeout');
-          } catch (reloadError) {
-            console.error('Reload failed:', reloadError.message);
-          }
-        }
+        // Don't reload on timeout - it causes more issues
+        // Just skip the screenshot and continue
       }
     };
     
-    // Send initial screenshot
+    // Send initial screenshot and URL
     sendScreenshot();
+    sendUrlUpdate();
     
     // Regular screenshots for smooth experience (hybrid approach)
     const targetFPS = parseInt(process.env.TARGET_FPS) || 10; // 10 FPS for Railway
@@ -263,11 +283,13 @@ const __dirname = path.dirname(__filename);
     ws.on('close', () => {
       console.log('WebSocket connection closed');
       clearInterval(regularUpdateInterval);
+      page.removeListener('framenavigated', urlChangeHandler);
     });
     
     ws.on('error', (error) => {
       console.error('WebSocket error:', error);
       clearInterval(regularUpdateInterval);
+      page.removeListener('framenavigated', urlChangeHandler);
     });
   });
 

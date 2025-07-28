@@ -46,14 +46,26 @@ export default function MiniBrowser() {
     };
     
     ws.onmessage = e => {
-      // All messages are binary (screenshots)
-      const blob = new Blob([e.data], { type: 'image/jpeg' });
-      const newImg = URL.createObjectURL(blob);
-      setImg(prevImg => {
-        if (prevImg) URL.revokeObjectURL(prevImg);
-        return newImg;
-      });
-      setIsNavigating(false);
+      if (typeof e.data === 'string') {
+        // JSON message (URL updates, etc)
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'url') {
+            setUrl(msg.url);
+          }
+        } catch (error) {
+          console.error('Error parsing JSON message:', error);
+        }
+      } else {
+        // Binary message (screenshot)
+        const blob = new Blob([e.data], { type: 'image/jpeg' });
+        const newImg = URL.createObjectURL(blob);
+        setImg(prevImg => {
+          if (prevImg) URL.revokeObjectURL(prevImg);
+          return newImg;
+        });
+        setIsNavigating(false);
+      }
     };
 
     ws.onerror = () => {
