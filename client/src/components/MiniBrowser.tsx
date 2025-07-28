@@ -205,11 +205,8 @@ export default function MiniBrowser() {
       JSON.stringify({ cmd: 'click', x, y })
     );
     
-    // Remove the typing indicator logic - it's interfering with clicks
-    // We'll let the focus state handle this instead
-    
-    // Focus the browser content to enable keyboard input
-    e.currentTarget.focus();
+    // Don't automatically focus on every click - this interferes with navigation
+    // Users can click on the browser content area to focus when they want to type
   };
 
   return (
@@ -425,7 +422,7 @@ export default function MiniBrowser() {
         {isFocused && (
           <div className="status-item">
             <div className="typing-indicator"></div>
-            <span className="status-text">Ready to type</span>
+            <span className="status-text">Keyboard active</span>
           </div>
         )}
       </div>

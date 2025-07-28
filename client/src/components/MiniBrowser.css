@@ -367,7 +367,7 @@
     overflow: hidden;
     background: linear-gradient(to bottom, #fafbfc, #f3f4f6);
     position: relative;
-    cursor: crosshair;
+    cursor: default;
     transition: background 0.3s ease;
   }
   
@@ -385,12 +385,11 @@
   }
   
   .browser-content.focused {
-    box-shadow: inset 0 0 0 2px rgba(59, 130, 246, 0.3);
     background: linear-gradient(to bottom, #ffffff, #fafbfc);
   }
   
   .browser-content.focused::after {
-    content: 'Click to interact • Type to input text • Scroll to navigate';
+    content: 'Keyboard input enabled • Press any key to type';
     position: absolute;
     bottom: 10px;
     left: 50%;
@@ -402,7 +401,7 @@
     font-size: 12px;
     font-weight: 500;
     pointer-events: none;
-    animation: fade-in-out 3s ease-out;
+    animation: fade-in-out 2s ease-out;
     opacity: 0;
   }
   

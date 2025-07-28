@@ -89,26 +89,23 @@ const __dirname = path.dirname(__filename);
               // Send multiple screenshots during navigation for smooth experience
               await sendScreenshot();
               
-              // Start navigation
-              const navPromise = page.goto(m.url, { 
+              // Start navigation without blocking
+              page.goto(m.url, { 
                 waitUntil: 'domcontentloaded',
                 timeout: 30000 
+              }).then(() => {
+                console.log('Navigation completed to:', m.url);
+                sendScreenshot();
+              }).catch((err) => {
+                console.error('Navigation failed:', err.message);
               });
               
               // Send screenshots during loading
-              setTimeout(() => sendScreenshot(), 100);
-              setTimeout(() => sendScreenshot(), 300);
-              setTimeout(() => sendScreenshot(), 500);
-              
-              // Wait for navigation
-              await navPromise;
-              await sendScreenshot();
-              
-              // More screenshots as page settles
               setTimeout(() => sendScreenshot(), 200);
-              setTimeout(() => sendScreenshot(), 400);
-              setTimeout(() => sendScreenshot(), 600);
-              setTimeout(() => sendScreenshot(), 800);
+              setTimeout(() => sendScreenshot(), 500);
+              setTimeout(() => sendScreenshot(), 1000);
+              setTimeout(() => sendScreenshot(), 1500);
+              setTimeout(() => sendScreenshot(), 2000);
             } catch (navError) {
               console.error('Navigation error:', navError.message);
               await sendScreenshot();
