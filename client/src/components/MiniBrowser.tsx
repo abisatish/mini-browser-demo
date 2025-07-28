@@ -190,7 +190,6 @@ export default function MiniBrowser() {
     
     // Try to detect if clicking on an input field (basic heuristic)
     // This is a simple approach - in production you'd want better detection
-    const rect = imgRef.current.getBoundingClientRect();
     const relativeY = y / rect.height;
     
     // If clicking in the middle area where forms usually are
