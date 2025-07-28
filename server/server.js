@@ -86,11 +86,20 @@ const __dirname = path.dirname(__filename);
           case 'nav':
             console.log('Navigating to:', m.url);
             try {
+              // Send screenshot immediately to show loading state
+              await sendScreenshot();
+              
+              // Navigate with more reasonable wait condition
               await page.goto(m.url, { 
-                waitUntil: 'networkidle',
+                waitUntil: 'domcontentloaded', // Faster than networkidle
                 timeout: 30000 
               });
-              // Send screenshot after navigation completes
+              
+              // Send screenshot after DOM loads
+              await sendScreenshot();
+              
+              // Wait a bit more for full page render
+              await page.waitForTimeout(500);
               await sendScreenshot();
             } catch (navError) {
               console.error('Navigation error:', navError.message);
@@ -108,27 +117,25 @@ const __dirname = path.dirname(__filename);
             console.log('Clicking at:', m.x, m.y);
             await page.mouse.click(m.x, m.y);
             
-            // Wait for potential navigation or DOM changes
-            try {
-              await page.waitForLoadState('networkidle', { timeout: 1000 });
-            } catch {
-              // If no network activity, just wait a bit for DOM updates
-              await page.waitForTimeout(300);
-            }
-            
-            // Send screenshot after click action settles
+            // Send immediate screenshot to show click effect
             await sendScreenshot();
+            
+            // Then wait for any changes and send another
+            try {
+              await page.waitForLoadState('domcontentloaded', { timeout: 1000 });
+              await sendScreenshot();
+            } catch {
+              // If no navigation, still send update after short delay
+              await page.waitForTimeout(200);
+              await sendScreenshot();
+            }
             break;
             
           case 'scroll':
-            // Debounce scroll events
-            if (scrollDebounceTimer) clearTimeout(scrollDebounceTimer);
-            
             await page.mouse.wheel(0, m.dy);
             
-            scrollDebounceTimer = setTimeout(async () => {
-              await sendScreenshot();
-            }, 150); // Wait 150ms after last scroll event
+            // For scrolling, the regular interval will handle updates
+            // This prevents too many screenshots during rapid scrolling
             break;
             
           case 'type':
@@ -160,13 +167,10 @@ const __dirname = path.dirname(__filename);
                 await sendScreenshot(100);
               }
             } else {
-              // Regular typing - debounce screenshots
+              // Regular typing - send screenshot immediately for responsive feel
               await page.keyboard.type(m.text);
-              
-              if (typeDebounceTimer) clearTimeout(typeDebounceTimer);
-              typeDebounceTimer = setTimeout(async () => {
-                await sendScreenshot();
-              }, 200); // Wait 200ms after last keystroke
+              // Send screenshot right away so user sees their typing
+              await sendScreenshot();
             }
             break;
             
@@ -180,10 +184,7 @@ const __dirname = path.dirname(__filename);
       }
     });
 
-    // Event-driven screenshots (like ChatGPT) instead of continuous streaming
-    let lastScrollTime = 0;
-    let scrollDebounceTimer = null;
-    let typeDebounceTimer = null;
+    // Event-driven screenshots plus regular updates for smooth experience
     
     // Send screenshot with error handling
     const sendScreenshot = async (addDelay = 0) => {
@@ -222,25 +223,20 @@ const __dirname = path.dirname(__filename);
     // Send initial screenshot
     sendScreenshot();
     
-    // Periodic check for auto-updating pages (much less frequent)
-    const updateCheckInterval = setInterval(async () => {
-      // Only check if page might have auto-updated content
-      const currentUrl = page.url();
-      if (currentUrl.includes('gmail') || currentUrl.includes('twitter') || currentUrl.includes('chat')) {
-        await sendScreenshot();
-      }
-    }, 5000); // Every 5 seconds for dynamic pages
+    // Regular screenshots for smooth experience (hybrid approach)
+    const regularUpdateInterval = setInterval(async () => {
+      // Send screenshot every 250ms for smooth viewing
+      await sendScreenshot();
+    }, 250); // 4 FPS baseline for smooth experience
 
     ws.on('close', () => {
       console.log('WebSocket connection closed');
-      clearInterval(updateCheckInterval);
-      if (scrollDebounceTimer) clearTimeout(scrollDebounceTimer);
-      if (typeDebounceTimer) clearTimeout(typeDebounceTimer);
+      clearInterval(regularUpdateInterval);
     });
     
     ws.on('error', (error) => {
       console.error('WebSocket error:', error);
-      clearInterval(updateCheckInterval);
+      clearInterval(regularUpdateInterval);
     });
   });
 

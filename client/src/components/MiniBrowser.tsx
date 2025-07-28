@@ -8,7 +8,6 @@ export default function MiniBrowser() {
   const [isNavigating, setIsNavigating] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [isFocused, setIsFocused] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -53,7 +52,6 @@ export default function MiniBrowser() {
         if (prevImg) URL.revokeObjectURL(prevImg);
         return newImg;
       });
-      setIsLoading(false);
       setIsNavigating(false);
     };
 
@@ -173,9 +171,6 @@ export default function MiniBrowser() {
         document.body.removeChild(clickIndicator);
       }
     }, 800);
-    
-    // Show subtle loading state
-    setIsLoading(true);
     
     // Send click command
     wsRef.current?.send(
@@ -363,29 +358,13 @@ export default function MiniBrowser() {
             </div>
           </div>
         ) : (
-          <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-            <img
-              ref={imgRef}
-              src={img}
-              className="browser-image"
-              draggable={false}
-              alt="Browser content"
-              style={{ opacity: isLoading ? 0.8 : 1, transition: 'opacity 0.2s' }}
-            />
-            {isLoading && (
-              <div style={{
-                position: 'absolute',
-                top: '10px',
-                right: '10px',
-                width: '24px',
-                height: '24px',
-                borderRadius: '50%',
-                border: '2px solid rgba(59, 130, 246, 0.3)',
-                borderTopColor: '#3b82f6',
-                animation: 'spin 0.8s linear infinite'
-              }} />
-            )}
-          </div>
+          <img
+            ref={imgRef}
+            src={img}
+            className="browser-image"
+            draggable={false}
+            alt="Browser content"
+          />
         )}
       </div>
       
@@ -398,7 +377,7 @@ export default function MiniBrowser() {
           </span>
         </div>
         <div className="status-item">
-          <span className="status-text">15 FPS Stream</span>
+          <span className="status-text">Hybrid Stream</span>
         </div>
         {isFocused && (
           <div className="status-item">
