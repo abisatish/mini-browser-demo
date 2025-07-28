@@ -8,7 +8,6 @@ export default function MiniBrowser() {
   const [showMenu, setShowMenu] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close menu when clicking outside
