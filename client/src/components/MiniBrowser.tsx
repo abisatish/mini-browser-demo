@@ -3,7 +3,7 @@ import './MiniBrowser.css';
 
 export default function MiniBrowser() {
   const [img, setImg] = useState('');
-  const [url, setUrl] = useState('https://ai.google');
+  const [url, setUrl] = useState('https://www.google.com');
   const [showMenu, setShowMenu] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
@@ -12,6 +12,8 @@ export default function MiniBrowser() {
   const menuRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const lastClickTime = useRef<number>(0);
+  const lastScrollTime = useRef<number>(0);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -94,10 +96,10 @@ export default function MiniBrowser() {
         setTimeout(() => setIsNavigating(false), 2000);
         break;
       case 'newTab':
-        setUrl('https://ai.google');
+        setUrl('https://www.google.com');
         setIsNavigating(true);
         wsRef.current?.send(
-          JSON.stringify({ cmd: 'nav', url: 'https://ai.google' })
+          JSON.stringify({ cmd: 'nav', url: 'https://www.google.com' })
         );
         setTimeout(() => setIsNavigating(false), 2000);
         break;
@@ -112,10 +114,15 @@ export default function MiniBrowser() {
     }
   };
 
-  // Handle scroll wheel events
+  // Handle scroll wheel events with throttling
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     e.preventDefault();
     if (connectionStatus !== 'connected') return;
+    
+    // Throttle scroll events to prevent overwhelming the server
+    const now = Date.now();
+    if (now - lastScrollTime.current < 50) return; // 50ms minimum between scrolls
+    lastScrollTime.current = now;
     
     const scrollAmount = e.deltaY;
     wsRef.current?.send(
@@ -141,9 +148,14 @@ export default function MiniBrowser() {
     }
   };
 
-  // Enhanced click handling with visual feedback
+  // Enhanced click handling with visual feedback and throttling
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (connectionStatus !== 'connected' || !imgRef.current) return;
+    
+    // Throttle clicks to prevent overwhelming the server
+    const now = Date.now();
+    if (now - lastClickTime.current < 100) return; // 100ms minimum between clicks
+    lastClickTime.current = now;
     
     const rect = imgRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -367,7 +379,7 @@ export default function MiniBrowser() {
           </span>
         </div>
         <div className="status-item">
-          <span className="status-text">30 FPS Stream</span>
+          <span className="status-text">15 FPS Stream</span>
         </div>
         {isFocused && (
           <div className="status-item">

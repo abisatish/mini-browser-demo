@@ -41,11 +41,11 @@ const __dirname = path.dirname(__filename);
     const newPage = await context.newPage();
     Object.setPrototypeOf(page, Object.getPrototypeOf(newPage));
     Object.assign(page, newPage);
-    await page.goto('https://ai.google');
+    await page.goto('https://www.google.com');
   });
   
-  await page.goto('https://ai.google');
-  console.log('Browser page loaded - Google AI');
+  await page.goto('https://www.google.com');
+  console.log('Browser page loaded - Google Search');
 
   const app = express();
   const wss = new WebSocketServer({ noServer: true });
@@ -120,10 +120,10 @@ const __dirname = path.dirname(__filename);
       }
     });
 
-    // Stream screenshots at 30 FPS for smoother experience
+    // Stream screenshots at 15 FPS to reduce server load
     let screenshotInterval;
     let lastScreenshotTime = 0;
-    const targetFPS = 30;
+    const targetFPS = 15; // Reduced from 30 to be less demanding
     const frameInterval = 1000 / targetFPS;
     
     const startScreenshots = async () => {
@@ -137,20 +137,55 @@ const __dirname = path.dirname(__filename);
         
         try {
           if (ws.readyState === ws.OPEN) {
-            const screenshot = await page.screenshot({ 
+            // Add timeout to prevent hanging
+            const screenshotPromise = page.screenshot({ 
               type: 'jpeg', 
-              quality: 90, // Higher quality for better appearance
+              quality: 85, // Slightly lower quality for better performance
               fullPage: false,
-              clip: { x: 0, y: 0, width: 1280, height: 720 }
+              clip: { x: 0, y: 0, width: 1280, height: 720 },
+              timeout: 5000 // 5 second timeout
             });
+            
+            const screenshot = await Promise.race([
+              screenshotPromise,
+              new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Screenshot timeout')), 5000)
+              )
+            ]);
+            
             ws.send(screenshot);
             lastScreenshotTime = now;
           } else {
             clearInterval(screenshotInterval);
           }
         } catch (error) {
-          console.error('Screenshot error:', error);
-          clearInterval(screenshotInterval);
+          console.error('Screenshot error:', error.message);
+          
+          // Try to recover by reloading the page
+          if (error.message.includes('Timeout') || error.message.includes('Screenshot timeout')) {
+            console.log('Attempting to recover from screenshot timeout...');
+            try {
+              // Navigate to current URL to refresh
+              const currentUrl = page.url();
+              await page.goto(currentUrl, { 
+                waitUntil: 'domcontentloaded',
+                timeout: 10000 
+              });
+              console.log('Page refreshed successfully');
+            } catch (recoveryError) {
+              console.error('Recovery failed:', recoveryError.message);
+              // If recovery fails, navigate to home page
+              try {
+                await page.goto('https://www.google.com', { 
+                  waitUntil: 'domcontentloaded',
+                  timeout: 10000 
+                });
+                console.log('Navigated to Google as fallback');
+              } catch (fallbackError) {
+                console.error('Fallback navigation failed:', fallbackError.message);
+              }
+            }
+          }
         }
       }, frameInterval);
     };
