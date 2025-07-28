@@ -27,7 +27,10 @@ const __dirname = path.dirname(__filename);
   
   const context = await browser.newContext({ 
     viewport: { width: 1280, height: 720 },
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    deviceScaleFactor: 2, // Higher quality rendering
+    hasTouch: false,
+    javascriptEnabled: true
   });
   
   const page = await context.newPage();
@@ -38,11 +41,11 @@ const __dirname = path.dirname(__filename);
     const newPage = await context.newPage();
     Object.setPrototypeOf(page, Object.getPrototypeOf(newPage));
     Object.assign(page, newPage);
-    await page.goto('https://www.google.com');
+    await page.goto('https://ai.google');
   });
   
-  await page.goto('https://accounts.google.com/signin');
-  console.log('Browser page loaded');
+  await page.goto('https://ai.google');
+  console.log('Browser page loaded - Google AI');
 
   const app = express();
   const wss = new WebSocketServer({ noServer: true });
@@ -75,7 +78,14 @@ const __dirname = path.dirname(__filename);
         switch (m.cmd) {
           case 'nav':
             console.log('Navigating to:', m.url);
-            await page.goto(m.url, { waitUntil: 'domcontentloaded' });
+            try {
+              await page.goto(m.url, { 
+                waitUntil: 'domcontentloaded',
+                timeout: 30000 
+              });
+            } catch (navError) {
+              console.error('Navigation error:', navError.message);
+            }
             break;
           case 'click':
             console.log('Clicking at:', m.x, m.y);
@@ -87,7 +97,15 @@ const __dirname = path.dirname(__filename);
             break;
           case 'type':
             console.log('Typing:', m.text);
-            await page.keyboard.type(m.text);
+            if (m.text === 'Enter') {
+              await page.keyboard.press('Enter');
+            } else if (m.text === 'Backspace') {
+              await page.keyboard.press('Backspace');
+            } else if (m.text === 'Tab') {
+              await page.keyboard.press('Tab');
+            } else {
+              await page.keyboard.type(m.text);
+            }
             break;
         }
       } catch (error) {
@@ -97,16 +115,29 @@ const __dirname = path.dirname(__filename);
 
     // Stream screenshots at 30 FPS for smoother experience
     let screenshotInterval;
+    let lastScreenshotTime = 0;
+    const targetFPS = 30;
+    const frameInterval = 1000 / targetFPS;
+    
     const startScreenshots = async () => {
       screenshotInterval = setInterval(async () => {
+        const now = Date.now();
+        
+        // Skip frame if we're running behind
+        if (now - lastScreenshotTime < frameInterval * 0.8) {
+          return;
+        }
+        
         try {
           if (ws.readyState === ws.OPEN) {
             const screenshot = await page.screenshot({ 
               type: 'jpeg', 
-              quality: 85, // Higher quality
-              fullPage: false 
+              quality: 90, // Higher quality for better appearance
+              fullPage: false,
+              clip: { x: 0, y: 0, width: 1280, height: 720 }
             });
             ws.send(screenshot);
+            lastScreenshotTime = now;
           } else {
             clearInterval(screenshotInterval);
           }
@@ -114,7 +145,7 @@ const __dirname = path.dirname(__filename);
           console.error('Screenshot error:', error);
           clearInterval(screenshotInterval);
         }
-      }, 33); // 30 FPS (1000ms / 30fps = 33ms)
+      }, frameInterval);
     };
     
     startScreenshots();
