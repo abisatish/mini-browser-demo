@@ -194,15 +194,36 @@ export default function MiniBrowser() {
     if (now - lastClickTime.current < 100) return; // 100ms minimum between clicks
     lastClickTime.current = now;
     
+    // Get click position relative to the image element
     const rect = imgRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
     
-    // Scale coordinates to match the actual browser viewport (1280x720)
-    const scaleX = 1280 / rect.width;
-    const scaleY = 720 / rect.height;
-    const scaledX = Math.round(x * scaleX);
-    const scaledY = Math.round(y * scaleY);
+    // Since image uses object-fit: contain, we need to calculate the actual displayed image dimensions
+    const imgNaturalWidth = 1280;
+    const imgNaturalHeight = 720;
+    const containerWidth = rect.width;
+    const containerHeight = rect.height;
+    
+    // Calculate scale to fit image within container while maintaining aspect ratio
+    const scale = Math.min(containerWidth / imgNaturalWidth, containerHeight / imgNaturalHeight);
+    const displayedWidth = imgNaturalWidth * scale;
+    const displayedHeight = imgNaturalHeight * scale;
+    
+    // Calculate offset for centered image
+    const offsetX = (containerWidth - displayedWidth) / 2;
+    const offsetY = (containerHeight - displayedHeight) / 2;
+    
+    // Get click coordinates relative to the actual image area
+    const x = e.clientX - rect.left - offsetX;
+    const y = e.clientY - rect.top - offsetY;
+    
+    // Scale to original image dimensions
+    const scaledX = Math.round((x / displayedWidth) * imgNaturalWidth);
+    const scaledY = Math.round((y / displayedHeight) * imgNaturalHeight);
+    
+    // Ensure coordinates are within bounds
+    if (scaledX < 0 || scaledX > imgNaturalWidth || scaledY < 0 || scaledY > imgNaturalHeight) {
+      return;
+    }
     
     // Visual feedback for click
     const clickIndicator = document.createElement('div');
