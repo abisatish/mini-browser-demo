@@ -96,8 +96,9 @@ const __dirname = path.dirname(__filename);
     console.log('Page crashed');
   });
   
-  await page.goto('https://duckduckgo.com');
-  console.log('Browser page loaded - DuckDuckGo Search');
+  // Try Searx - an open source, privacy-respecting metasearch engine
+  await page.goto('https://searx.be');
+  console.log('Browser page loaded - Searx Search (no captchas, no blocking)');
 
   const app = express();
   const wss = new WebSocketServer({ noServer: true });
