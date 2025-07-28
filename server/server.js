@@ -133,17 +133,7 @@ const __dirname = path.dirname(__filename);
             
           case 'click':
             console.log('Clicking at:', m.x, m.y);
-            
-            // First try a normal mouse click
             await page.mouse.click(m.x, m.y);
-            
-            // Also dispatch a click event in case the element needs it
-            await page.evaluate(({ x, y }) => {
-              const element = document.elementFromPoint(x, y);
-              if (element) {
-                element.click();
-              }
-            }, { x: m.x, y: m.y });
             
             // Rapid screenshots after click for smooth feedback
             await sendScreenshot();
