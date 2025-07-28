@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "install:all": "npm install && cd client && npm install && cd ../server && npm install",
-    "build:client": "cd client && npm run build",
-    "start:server": "cd server && npm start",
+    "build:client": "cd client && npm install && npm run build",
+    "start:server": "cd server && npm install && npm start",
     "start:client": "cd client && npm start",
     "deploy:all": "npm run build:client && npm run start:server"
   },
