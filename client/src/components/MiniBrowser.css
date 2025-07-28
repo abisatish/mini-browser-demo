@@ -384,26 +384,7 @@
     pointer-events: none;
   }
   
-  .browser-content.focused {
-    background: linear-gradient(to bottom, #ffffff, #fafbfc);
-  }
   
-  .browser-content.focused::after {
-    content: 'Keyboard input enabled • Press any key to type';
-    position: absolute;
-    bottom: 10px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.8);
-    color: white;
-    padding: 6px 16px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 500;
-    pointer-events: none;
-    animation: fade-in-out 2s ease-out;
-    opacity: 0;
-  }
   
   @keyframes fade-in-out {
     0% {
@@ -630,24 +611,6 @@
     }
   }
   
-  .typing-indicator {
-    width: 6px;
-    height: 6px;
-    background: #10b981;
-    border-radius: 50%;
-    animation: typing-pulse 1.5s ease-in-out infinite;
-  }
-  
-  @keyframes typing-pulse {
-    0%, 100% {
-      opacity: 0.4;
-      transform: scale(1);
-    }
-    50% {
-      opacity: 1;
-      transform: scale(1.2);
-    }
-  }
   
   /* Tailwind utility classes */
   .w-4 { width: 1rem; }

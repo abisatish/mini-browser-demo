@@ -7,7 +7,6 @@ export default function MiniBrowser() {
   const [showMenu, setShowMenu] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
-  const [isFocused, setIsFocused] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -217,8 +216,9 @@ export default function MiniBrowser() {
       JSON.stringify({ cmd: 'click', x, y })
     );
     
-    // Don't automatically focus on every click - this interferes with navigation
-    // Users can click on the browser content area to focus when they want to type
+    // Focus the content area to enable keyboard input
+    // This won't interfere with clicks since we're using tabIndex={-1}
+    contentRef.current?.focus();
   };
 
   return (
@@ -362,13 +362,11 @@ export default function MiniBrowser() {
       {/* Content Area */}
       <div 
         ref={contentRef}
-        className={`browser-content ${isFocused ? 'focused' : ''}`}
+        className="browser-content"
         onWheel={handleWheel}
         onKeyDown={handleKeyDown}
         onClick={handleClick}
-        onFocus={() => setIsFocused(true)}
-        onBlur={() => setIsFocused(false)}
-        tabIndex={0}
+        tabIndex={-1}
       >
         {connectionStatus === 'connecting' ? (
           <div className="loading-screen">
@@ -431,12 +429,6 @@ export default function MiniBrowser() {
         <div className="status-item">
           <span className="status-text">20+ FPS Stream</span>
         </div>
-        {isFocused && (
-          <div className="status-item">
-            <div className="typing-indicator"></div>
-            <span className="status-text">Keyboard active</span>
-          </div>
-        )}
       </div>
     </div>
   );
