@@ -122,7 +122,7 @@ const __dirname = path.dirname(__filename);
   const page = await context.newPage();
   
   // Override page visibility to always report visible
-  await page.evaluateOnNewDocument(() => {
+  await page.addInitScript(() => {
     Object.defineProperty(document, 'hidden', { get: () => false });
     Object.defineProperty(document, 'visibilityState', { get: () => 'visible' });
   });
