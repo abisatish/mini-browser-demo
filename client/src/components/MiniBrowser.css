@@ -1,7 +1,9 @@
 .browser-container {
-    width: 100%;
+    width: 90vw;
     max-width: 1200px;
-    height: 800px;
+    height: 80vh;
+    max-height: 800px;
+    margin: 0 auto;
     border-radius: 16px;
     overflow: hidden;
     background: #ffffff;

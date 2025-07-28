@@ -47,13 +47,26 @@ export default function MiniBrowser() {
     };
     
     ws.onmessage = e => {
-      const blob = new Blob([e.data], { type: 'image/jpeg' });
-      const newImg = URL.createObjectURL(blob);
-      setImg(prevImg => {
-        if (prevImg) URL.revokeObjectURL(prevImg);
-        return newImg;
-      });
-      setIsNavigating(false);
+      // Check if it's a JSON message (URL update) or binary (screenshot)
+      if (typeof e.data === 'string') {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.type === 'urlUpdate') {
+            setUrl(data.url);
+          }
+        } catch (err) {
+          // Not JSON, ignore
+        }
+      } else {
+        // Binary data - screenshot
+        const blob = new Blob([e.data], { type: 'image/jpeg' });
+        const newImg = URL.createObjectURL(blob);
+        setImg(prevImg => {
+          if (prevImg) URL.revokeObjectURL(prevImg);
+          return newImg;
+        });
+        setIsNavigating(false);
+      }
     };
 
     ws.onerror = () => {
@@ -269,9 +282,15 @@ export default function MiniBrowser() {
               type="text"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleUrlSubmit(e as any);
+                }
+              }}
               className="url-input"
               placeholder="Search or enter address"
-              disabled={isNavigating || connectionStatus !== 'connected'}
+              disabled={connectionStatus !== 'connected'}
+              autoFocus
             />
             {isNavigating ? (
               <div className="url-loading">

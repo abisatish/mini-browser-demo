@@ -102,6 +102,11 @@ const __dirname = path.dirname(__filename);
               
               // Wait for navigation
               await navPromise;
+              
+              // Send URL update to client
+              const currentUrl = page.url();
+              ws.send(JSON.stringify({ type: 'urlUpdate', url: currentUrl }));
+              
               await sendScreenshot();
               
               // More screenshots as page settles
@@ -122,6 +127,7 @@ const __dirname = path.dirname(__filename);
             
           case 'click':
             console.log('Clicking at:', m.x, m.y);
+            const urlBefore = page.url();
             await page.mouse.click(m.x, m.y);
             
             // Rapid screenshots after click for smooth feedback
@@ -133,7 +139,11 @@ const __dirname = path.dirname(__filename);
             // Check if click triggered navigation
             try {
               await page.waitForLoadState('domcontentloaded', { timeout: 500 });
-              // Navigation detected, send more screenshots
+              // Navigation detected, send URL update
+              const urlAfter = page.url();
+              if (urlAfter !== urlBefore) {
+                ws.send(JSON.stringify({ type: 'urlUpdate', url: urlAfter }));
+              }
               await sendScreenshot();
               setTimeout(() => sendScreenshot(), 200);
               setTimeout(() => sendScreenshot(), 400);
@@ -195,6 +205,8 @@ const __dirname = path.dirname(__filename);
             console.log('Going back');
             try {
               await page.goBack({ timeout: 5000 });
+              const currentUrl = page.url();
+              ws.send(JSON.stringify({ type: 'urlUpdate', url: currentUrl }));
               await sendScreenshot();
             } catch (error) {
               console.log('Cannot go back');
@@ -205,6 +217,8 @@ const __dirname = path.dirname(__filename);
             console.log('Going forward');
             try {
               await page.goForward({ timeout: 5000 });
+              const currentUrl = page.url();
+              ws.send(JSON.stringify({ type: 'urlUpdate', url: currentUrl }));
               await sendScreenshot();
             } catch (error) {
               console.log('Cannot go forward');
