@@ -94,11 +94,9 @@ export default function ProfileScanner({ wsRef, visible, onClose }: ProfileScann
     
     // If stuck in a state for too long, show error
     const timeout = setTimeout(() => {
-      if (scanStatus !== 'complete') {
-        console.log('Scan timeout - stuck in:', scanStatus);
-        setError('Scan timeout - please try again');
-        setScanStatus('idle');
-      }
+      console.log('Scan timeout - stuck in:', scanStatus);
+      setError('Scan timeout - please try again');
+      setScanStatus('idle');
     }, 15000); // 15 second timeout
     
     return () => clearTimeout(timeout);
