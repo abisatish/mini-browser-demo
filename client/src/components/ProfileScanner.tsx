@@ -44,8 +44,12 @@ export default function ProfileScanner({ wsRef, visible, onClose }: ProfileScann
     if (!wsRef.current) return;
     
     const handleMessage = (event: MessageEvent) => {
+      // Skip binary messages (screenshots)
+      if (typeof event.data !== 'string') return;
+      
       try {
         const msg = JSON.parse(event.data);
+        console.log('ProfileScanner received:', msg.type, msg);
         
         switch (msg.type) {
           case 'scanStatus':
@@ -64,7 +68,7 @@ export default function ProfileScanner({ wsRef, visible, onClose }: ProfileScann
             break;
         }
       } catch (e) {
-        // Not a JSON message, ignore
+        console.error('Failed to parse message:', e);
       }
     };
     

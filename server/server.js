@@ -694,7 +694,7 @@ const __dirname = path.dirname(__filename);
                 fullPage: true
               });
               
-              console.log('Captured full page screenshot');
+              console.log('Captured full page screenshot, size:', fullPageScreenshot.length, 'bytes');
               
               // Mock analysis for now (since we need OpenAI API key)
               ws.send(JSON.stringify({ type: 'scanStatus', status: 'analyzing', message: 'Processing with AI...' }));
