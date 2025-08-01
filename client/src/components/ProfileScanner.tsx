@@ -23,6 +23,11 @@ export default function ProfileScanner({ wsRef, visible, onClose }: ProfileScann
   const [analysis, setAnalysis] = useState<ProfileAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
   
+  // Force re-render when status changes
+  useEffect(() => {
+    console.log('Scan status changed to:', scanStatus);
+  }, [scanStatus]);
+  
   useEffect(() => {
     if (!visible) {
       // Reset state when hidden
@@ -49,27 +54,30 @@ export default function ProfileScanner({ wsRef, visible, onClose }: ProfileScann
       
       try {
         const msg = JSON.parse(event.data);
-        console.log('ProfileScanner received:', msg.type, msg);
-        console.log('Current scan status:', scanStatus);
         
-        switch (msg.type) {
-          case 'scanStatus':
-            setScanStatus(msg.status);
-            setStatusMessage(msg.message);
-            break;
-            
-          case 'profileAnalysis':
-            setAnalysis(msg.analysis);
-            setScanStatus('complete');
-            break;
-            
-          case 'scanError':
-            setError(msg.error);
-            setScanStatus('idle');
-            break;
+        // Only process messages relevant to profile scanning
+        if (msg.type === 'scanStatus' || msg.type === 'profileAnalysis' || msg.type === 'scanError') {
+          console.log('ProfileScanner received:', msg.type, msg);
+          
+          switch (msg.type) {
+            case 'scanStatus':
+              setScanStatus(msg.status);
+              setStatusMessage(msg.message);
+              break;
+              
+            case 'profileAnalysis':
+              setAnalysis(msg.analysis);
+              setScanStatus('complete');
+              break;
+              
+            case 'scanError':
+              setError(msg.error);
+              setScanStatus('idle');
+              break;
+          }
         }
       } catch (e) {
-        console.error('Failed to parse message:', e);
+        // Ignore non-JSON messages
       }
     };
     
@@ -78,7 +86,23 @@ export default function ProfileScanner({ wsRef, visible, onClose }: ProfileScann
     return () => {
       wsRef.current?.removeEventListener('message', handleMessage);
     };
-  }, [wsRef]);
+  }, [wsRef, visible]); // Add visible to deps to re-register when shown
+  
+  // Add timeout handling
+  useEffect(() => {
+    if (!visible || scanStatus === 'idle' || scanStatus === 'complete') return;
+    
+    // If stuck in a state for too long, show error
+    const timeout = setTimeout(() => {
+      if (scanStatus !== 'complete') {
+        console.log('Scan timeout - stuck in:', scanStatus);
+        setError('Scan timeout - please try again');
+        setScanStatus('idle');
+      }
+    }, 15000); // 15 second timeout
+    
+    return () => clearTimeout(timeout);
+  }, [scanStatus, visible]);
   
   if (!visible) return null;
   
@@ -138,11 +162,18 @@ export default function ProfileScanner({ wsRef, visible, onClose }: ProfileScann
             <div className="scanner-loading">
               <div className="scan-animation">
                 <div className="scan-line"></div>
+                {scanStatus === 'analyzing' && (
+                  <div className="ai-thinking">
+                    <div className="thinking-dot"></div>
+                    <div className="thinking-dot"></div>
+                    <div className="thinking-dot"></div>
+                  </div>
+                )}
               </div>
               <p className="status-message">{statusMessage || 'Initializing scan...'}</p>
               <div className="progress-dots">
-                <span className={scanStatus === 'scanning' ? 'active' : ''}>Scanning</span>
-                <span className={scanStatus === 'capturing' ? 'active' : ''}>Capturing</span>
+                <span className={scanStatus === 'scanning' || scanStatus === 'capturing' || scanStatus === 'analyzing' ? 'active' : ''}>Scanning</span>
+                <span className={scanStatus === 'capturing' || scanStatus === 'analyzing' ? 'active' : ''}>Capturing</span>
                 <span className={scanStatus === 'analyzing' ? 'active' : ''}>Analyzing</span>
               </div>
             </div>
