@@ -696,6 +696,7 @@ const __dirname = path.dirname(__filename);
               // Now take the full page screenshot
               ws.send(JSON.stringify({ type: 'scanStatus', status: 'capturing', message: 'Capturing profile data...' }));
               await sendScreenshot(); // Send one more frame to show we're at capturing stage
+              await new Promise(resolve => setTimeout(resolve, 100)); // Small delay to ensure message is sent
               
               const fullPageScreenshot = await page.screenshot({ 
                 type: 'jpeg', 
@@ -708,6 +709,7 @@ const __dirname = path.dirname(__filename);
               // Update status to analyzing
               ws.send(JSON.stringify({ type: 'scanStatus', status: 'analyzing', message: 'Processing with AI...' }));
               await sendScreenshot(); // Update UI
+              await new Promise(resolve => setTimeout(resolve, 100)); // Ensure status update is sent
               
               // Analyze with GPT-4 Vision if API key exists
               if (openai && process.env.OPENAI_API_KEY) {

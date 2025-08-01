@@ -50,6 +50,7 @@ export default function ProfileScanner({ wsRef, visible, onClose }: ProfileScann
       try {
         const msg = JSON.parse(event.data);
         console.log('ProfileScanner received:', msg.type, msg);
+        console.log('Current scan status:', scanStatus);
         
         switch (msg.type) {
           case 'scanStatus':
