@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import './SearchResults.css';
 
 interface SearchResult {
@@ -17,6 +17,7 @@ interface SearchResultsProps {
 }
 
 export default function SearchResults({ query, results, onNavigate, onClose }: SearchResultsProps) {
+  const listRef = useRef<HTMLDivElement>(null);
   // Handle escape key to close
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -28,13 +29,56 @@ export default function SearchResults({ query, results, onNavigate, onClose }: S
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
   }, [onClose]);
+  
+  // Auto-scroll animation
+  useEffect(() => {
+    if (!listRef.current) return;
+    
+    const scrollContainer = listRef.current;
+    const scrollHeight = scrollContainer.scrollHeight;
+    const clientHeight = scrollContainer.clientHeight;
+    const maxScroll = scrollHeight - clientHeight;
+    
+    if (maxScroll <= 0) return; // No need to scroll if content fits
+    
+    let startTime: number | null = null;
+    const duration = 4000; // 4 seconds to scroll through all content
+    const delay = 500; // Start scrolling after 500ms
+    
+    const animateScroll = (timestamp: number) => {
+      if (!startTime) startTime = timestamp;
+      const elapsed = timestamp - startTime;
+      
+      if (elapsed < delay) {
+        requestAnimationFrame(animateScroll);
+        return;
+      }
+      
+      const progress = Math.min((elapsed - delay) / duration, 1);
+      const easeProgress = 0.5 - Math.cos(progress * Math.PI) / 2; // Ease in-out
+      
+      scrollContainer.scrollTop = maxScroll * easeProgress;
+      
+      if (progress < 1) {
+        requestAnimationFrame(animateScroll);
+      }
+    };
+    
+    const animationId = requestAnimationFrame(animateScroll);
+    
+    return () => {
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+      }
+    };
+  }, [results]);
 
   return (
     <div className="search-results-overlay">
       <div className="search-results-container">
         {/* Header */}
         <div className="search-results-header">
-          <h3 className="search-results-title">Opening first search result</h3>
+          <h3 className="search-results-title">Search results for "{query}"</h3>
           <button className="search-results-close" onClick={onClose}>
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
               <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
@@ -43,7 +87,7 @@ export default function SearchResults({ query, results, onNavigate, onClose }: S
         </div>
 
         {/* Results list */}
-        <div className="search-results-list">
+        <div ref={listRef} className="search-results-list">
           {results.map((result, index) => (
             <div 
               key={index} 

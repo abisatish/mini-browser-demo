@@ -28,12 +28,14 @@
   border-radius: 16px;
   width: 90%;
   max-width: 600px;
+  height: 600px;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
   animation: slideUp 0.3s ease-out;
   overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 @keyframes slideUp {
@@ -61,6 +63,7 @@
   font-weight: 500;
   color: #ffffff;
   margin: 0;
+  animation: fadeIn 0.5s ease-out;
 }
 
 .search-results-close {
@@ -84,6 +87,7 @@
   flex: 1;
   overflow-y: auto;
   padding: 8px 0;
+  scroll-behavior: smooth;
 }
 
 /* Scrollbar styling */
@@ -215,7 +219,7 @@
   height: 100%;
   background: linear-gradient(90deg, #4a9eff 0%, #0066ff 100%);
   width: 100%;
-  animation: progressAnimation 2s ease-in-out;
+  animation: progressAnimation 6s linear;
 }
 
 @keyframes progressAnimation {

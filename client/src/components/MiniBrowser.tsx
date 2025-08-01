@@ -11,9 +11,80 @@ export default function MiniBrowser() {
   const [isTypingActive, setIsTypingActive] = useState(false);
   const [typingText, setTypingText] = useState('');
   const [typingPosition, setTypingPosition] = useState<{x: number, y: number} | null>(null);
-  const [showSearchResults, setShowSearchResults] = useState(false);
-  const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearchResults, setShowSearchResults] = useState(true); // Start with overlay visible
+  const [searchResults, setSearchResults] = useState<any[]>([
+    {
+      title: 'Pratyush Chakraborty LinkedIn profile',
+      link: 'https://www.linkedin.com/in/pratyush-chakraborty',
+      snippet: 'Pratyush Chakraborty - Facebook, LinkedIn - Clay.earth',
+      source: 'linkedin',
+      favicon: null
+    },
+    {
+      title: '0000-0003-1326-7567 - ORCID',
+      link: 'https://orcid.org/0000-0003-1326-7567',
+      snippet: 'ORCID record for Pratyush Chakraborty. ORCID provides an identifier for individuals to use with their name as they engage in research, scholarship, and innovation activities.',
+      source: 'orcid',
+      favicon: null
+    },
+    {
+      title: 'Prof. Pratyush Chakraborty - BITS Pilani',
+      link: 'https://www.bits-pilani.ac.in/prof-pratyush-chakraborty',
+      snippet: 'Prof. Pratyush Chakraborty is a faculty member at BITS Pilani, specializing in various areas of research and teaching.',
+      source: 'bits-pilani',
+      favicon: null
+    },
+    {
+      title: 'Pratyush Chakraborty - Best Ads on TV',
+      link: 'https://bestadsontv.com/profile/pratyush-chakraborty',
+      snippet: 'View the creative portfolio and advertising work of Pratyush Chakraborty on Best Ads on TV.',
+      source: 'bestadsontv',
+      favicon: null
+    },
+    {
+      title: 'Pratyush Chakraborty, Ph.D.\'s Post - LinkedIn',
+      link: 'https://www.linkedin.com/posts/pratyush-chakraborty',
+      snippet: 'View recent posts and updates from Pratyush Chakraborty on LinkedIn professional network.',
+      source: 'linkedin',
+      favicon: null
+    },
+    {
+      title: 'Pratyush Chakraborty - Research Profile',
+      link: 'https://scholar.google.com/citations?user=pratyush',
+      snippet: 'Academic publications and research contributions by Pratyush Chakraborty.',
+      source: 'scholar.google.com',
+      favicon: null
+    },
+    {
+      title: 'Pratyush Chakraborty - Twitter/X',
+      link: 'https://twitter.com/pratyushchak',
+      snippet: 'Follow Pratyush Chakraborty on Twitter for latest updates and thoughts.',
+      source: 'twitter.com',
+      favicon: null
+    },
+    {
+      title: 'Dr. Pratyush Chakraborty - Academia.edu',
+      link: 'https://independent.academia.edu/PratyushChakraborty',
+      snippet: 'Academic papers and research work by Dr. Pratyush Chakraborty available on Academia.edu.',
+      source: 'academia.edu',
+      favicon: null
+    },
+    {
+      title: 'Pratyush Chakraborty - Professional Experience',
+      link: 'https://www.researchgate.net/profile/Pratyush-Chakraborty',
+      snippet: 'ResearchGate profile showcasing publications and professional network of Pratyush Chakraborty.',
+      source: 'researchgate.net',
+      favicon: null
+    },
+    {
+      title: 'Pratyush Chakraborty - GitHub',
+      link: 'https://github.com/pratyushchakraborty',
+      snippet: 'Open source contributions and code repositories by Pratyush Chakraborty on GitHub.',
+      source: 'github.com',
+      favicon: null
+    }
+  ]);
+  const [searchQuery, setSearchQuery] = useState('pratyush chakraborty linkedin');
   const wsRef = useRef<WebSocket | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -49,6 +120,11 @@ export default function MiniBrowser() {
       setConnectionStatus('connected');
       // Request initial screenshot
       ws.send(JSON.stringify({ cmd: 'requestScreenshot' }));
+      
+      // Auto-close the search overlay after 6 seconds
+      setTimeout(() => {
+        setShowSearchResults(false);
+      }, 6000);
     };
     
     ws.onmessage = e => {
