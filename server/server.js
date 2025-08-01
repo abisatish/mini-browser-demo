@@ -193,7 +193,12 @@ const __dirname = path.dirname(__filename);
   // Log console messages for debugging
   page.on('console', msg => {
     if (msg.type() === 'error') {
-      console.log('Browser console error:', msg.text());
+      const errorText = msg.text();
+      // Filter out all Chrome extension errors
+      if (errorText.includes('chrome-extension://')) {
+        return; // Skip logging this error
+      }
+      console.log('Browser console error:', errorText);
     }
   });
   
