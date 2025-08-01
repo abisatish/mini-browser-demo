@@ -5,8 +5,13 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
 import dotenv from 'dotenv';
+import OpenAI from 'openai';
 
 dotenv.config();
+
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+}) : null;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -685,8 +690,12 @@ const __dirname = path.dirname(__filename);
                 await sendScreenshot();
               }
               
+              // Small delay before capturing to ensure UI updates
+              await new Promise(resolve => setTimeout(resolve, 200));
+              
               // Now take the full page screenshot
               ws.send(JSON.stringify({ type: 'scanStatus', status: 'capturing', message: 'Capturing profile data...' }));
+              await sendScreenshot(); // Send one more frame to show we're at capturing stage
               
               const fullPageScreenshot = await page.screenshot({ 
                 type: 'jpeg', 
@@ -696,28 +705,118 @@ const __dirname = path.dirname(__filename);
               
               console.log('Captured full page screenshot, size:', fullPageScreenshot.length, 'bytes');
               
-              // Mock analysis for now (since we need OpenAI API key)
+              // Update status to analyzing
               ws.send(JSON.stringify({ type: 'scanStatus', status: 'analyzing', message: 'Processing with AI...' }));
+              await sendScreenshot(); // Update UI
               
-              // Simulate processing time
-              await new Promise(resolve => setTimeout(resolve, 1500));
-              
-              // Send mock results
-              const mockAnalysis = {
-                name: "Pratyush Chakraborty",
-                currentPosition: "Software Engineer",
-                currentCompany: "Meta/Facebook",
-                previousCompanies: ["Google", "Microsoft"],
-                education: "BITS Pilani",
-                skills: ["JavaScript", "React", "Node.js", "Python"],
-                summary: "Experienced software engineer with background in full-stack development and machine learning."
-              };
-              
-              ws.send(JSON.stringify({ 
-                type: 'profileAnalysis', 
-                analysis: mockAnalysis,
-                scanComplete: true
-              }));
+              // Analyze with GPT-4 Vision if API key exists
+              if (openai && process.env.OPENAI_API_KEY) {
+                try {
+                  console.log('OpenAI client initialized:', !!openai);
+                  console.log('API Key exists:', !!process.env.OPENAI_API_KEY);
+                  console.log('Sending to GPT-4 Vision for analysis...');
+                  
+                  // Custom prompt - you can modify this
+                  const prompt = m.prompt || `Analyze this LinkedIn profile and extract the following information in JSON format:
+{
+  "name": "Full name",
+  "currentPosition": "Current job title",
+  "currentCompany": "Current company name",
+  "previousCompanies": ["List of previous companies"],
+  "education": "Education details",
+  "skills": ["List of top skills"],
+  "summary": "Brief 2-3 sentence summary of their background and expertise"
+}
+
+Be accurate and only include information you can see in the profile.`;
+                  
+                  const response = await openai.chat.completions.create({
+                    model: "gpt-4-vision-preview",
+                    messages: [
+                      {
+                        role: "user",
+                        content: [
+                          {
+                            type: "text",
+                            text: prompt
+                          },
+                          {
+                            type: "image_url",
+                            image_url: {
+                              url: `data:image/jpeg;base64,${fullPageScreenshot.toString('base64')}`,
+                              detail: "high" // Use high detail for better accuracy
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    max_tokens: 1000,
+                    temperature: 0.3 // Lower temperature for more consistent extraction
+                  });
+                  
+                  const analysisText = response.choices[0].message.content;
+                  console.log('GPT Analysis:', analysisText);
+                  
+                  // Try to parse as JSON, fallback to text if not valid JSON
+                  let analysis;
+                  try {
+                    analysis = JSON.parse(analysisText);
+                  } catch (e) {
+                    // If not valid JSON, create a simple object with the text
+                    analysis = {
+                      name: "Analysis Complete",
+                      currentPosition: "See summary",
+                      currentCompany: "See summary",
+                      previousCompanies: [],
+                      education: "See summary",
+                      skills: [],
+                      summary: analysisText
+                    };
+                  }
+                  
+                  ws.send(JSON.stringify({ 
+                    type: 'profileAnalysis', 
+                    analysis: analysis,
+                    scanComplete: true
+                  }));
+                  
+                } catch (error) {
+                  console.error('GPT analysis error:', error);
+                  console.error('Error details:', error.message, error.response?.data);
+                  // Fallback to mock data on error
+                  ws.send(JSON.stringify({ 
+                    type: 'profileAnalysis', 
+                    analysis: {
+                      name: "Analysis Failed",
+                      currentPosition: "Error",
+                      currentCompany: "Error",
+                      previousCompanies: [],
+                      education: "Error",
+                      skills: [],
+                      summary: `GPT analysis failed: ${error.message}`
+                    },
+                    scanComplete: true
+                  }));
+                }
+              } else {
+                // No API key, use mock data
+                console.log('No OpenAI API key found, using mock data');
+                const mockAnalysis = {
+                  name: "Pratyush Chakraborty",
+                  currentPosition: "Software Engineer",
+                  currentCompany: "Meta/Facebook",
+                  previousCompanies: ["Google", "Microsoft"],
+                  education: "BITS Pilani",
+                  skills: ["JavaScript", "React", "Node.js", "Python"],
+                  summary: "Experienced software engineer with background in full-stack development. (This is mock data - add OPENAI_API_KEY to .env for real analysis)"
+                };
+                
+                ws.send(JSON.stringify({ 
+                  type: 'profileAnalysis', 
+                  analysis: mockAnalysis,
+                  scanComplete: true
+                }));
+              }
               
               // Stay at top of page
               await sendScreenshot();
