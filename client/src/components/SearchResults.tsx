@@ -1,5 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import './SearchResults.css';
+import MouseCursor from './MouseCursor';
+import Narration from './Narration';
 
 interface SearchResult {
   title: string;
@@ -18,6 +20,12 @@ interface SearchResultsProps {
 
 export default function SearchResults({ query, results, onNavigate, onClose }: SearchResultsProps) {
   const listRef = useRef<HTMLDivElement>(null);
+  const [mousePos, setMousePos] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  const [showMouse, setShowMouse] = useState(false);
+  const [isClicking, setIsClicking] = useState(false);
+  const [narrationText, setNarrationText] = useState('');
+  const [showNarration, setShowNarration] = useState(false);
+  const resultsRef = useRef<HTMLDivElement[]>([]);
   // Handle escape key to close
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -42,8 +50,8 @@ export default function SearchResults({ query, results, onNavigate, onClose }: S
     if (maxScroll <= 0) return; // No need to scroll if content fits
     
     let startTime: number | null = null;
-    const duration = 4000; // 4 seconds to scroll through all content
-    const delay = 500; // Start scrolling after 500ms
+    const duration = 5500; // 5.5 seconds to scroll through all content
+    const delay = 300; // Start scrolling after 300ms
     
     const animateScroll = (timestamp: number) => {
       if (!startTime) startTime = timestamp;
@@ -55,7 +63,20 @@ export default function SearchResults({ query, results, onNavigate, onClose }: S
       }
       
       const progress = Math.min((elapsed - delay) / duration, 1);
-      const easeProgress = 0.5 - Math.cos(progress * Math.PI) / 2; // Ease in-out
+      
+      // Use a more linear easing with subtle acceleration/deceleration
+      let easeProgress;
+      if (progress < 0.1) {
+        // Gentle ease in for first 10%
+        easeProgress = progress * progress * 10;
+      } else if (progress > 0.9) {
+        // Gentle ease out for last 10%
+        const x = (progress - 0.9) * 10;
+        easeProgress = 0.9 + (1 - (1 - x) * (1 - x)) * 0.1;
+      } else {
+        // Linear in the middle 80%
+        easeProgress = 0.1 + (progress - 0.1) * (0.8 / 0.8);
+      }
       
       scrollContainer.scrollTop = maxScroll * easeProgress;
       
@@ -72,9 +93,77 @@ export default function SearchResults({ query, results, onNavigate, onClose }: S
       }
     };
   }, [results]);
+  
+  // Automated mouse movement and narration
+  useEffect(() => {
+    const automateDemo = async () => {
+      // Wait a bit before starting
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      // Show narration
+      setShowNarration(true);
+      setNarrationText("I'll search for Pratyush Chakraborty on LinkedIn and find relevant profiles.");
+      
+      // Show mouse cursor
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      setShowMouse(true);
+      
+      // Move mouse to first result
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const firstResult = resultsRef.current[0];
+      if (firstResult) {
+        const rect = firstResult.getBoundingClientRect();
+        const targetX = rect.left + rect.width / 2;
+        const targetY = rect.top + rect.height / 2;
+        
+        // Animate mouse movement
+        const startX = mousePos.x;
+        const startY = mousePos.y;
+        const duration = 1000;
+        const startTime = Date.now();
+        
+        const animateMouse = () => {
+          const elapsed = Date.now() - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          const easeProgress = 1 - Math.pow(1 - progress, 3); // Ease out cubic
+          
+          const currentX = startX + (targetX - startX) * easeProgress;
+          const currentY = startY + (targetY - startY) * easeProgress;
+          
+          setMousePos({ x: currentX, y: currentY });
+          
+          if (progress < 1) {
+            requestAnimationFrame(animateMouse);
+          } else {
+            // Hover effect
+            setTimeout(() => {
+              setNarrationText("I'll open the LinkedIn profile to get more information about Pratyush Chakraborty.");
+              
+              // Click animation
+              setTimeout(() => {
+                setIsClicking(true);
+                setTimeout(() => {
+                  setIsClicking(false);
+                  if (onNavigate) {
+                    onNavigate(results[0].link);
+                  }
+                }, 200);
+              }, 1500);
+            }, 500);
+          }
+        };
+        
+        requestAnimationFrame(animateMouse);
+      }
+    };
+    
+    automateDemo();
+  }, []);
 
   return (
     <div className="search-results-overlay">
+      <MouseCursor x={mousePos.x} y={mousePos.y} visible={showMouse} clicking={isClicking} />
+      <Narration text={narrationText} visible={showNarration} />
       <div className="search-results-container">
         {/* Header */}
         <div className="search-results-header">
@@ -91,8 +180,16 @@ export default function SearchResults({ query, results, onNavigate, onClose }: S
           {results.map((result, index) => (
             <div 
               key={index} 
+              ref={el => resultsRef.current[index] = el!}
               className="search-result-item"
               onClick={() => onNavigate(result.link)}
+              style={{
+                transition: 'background 0.3s',
+                background: showMouse && index === 0 && 
+                  Math.abs(mousePos.x - (resultsRef.current[0]?.getBoundingClientRect().left + resultsRef.current[0]?.getBoundingClientRect().width / 2)) < 50 &&
+                  Math.abs(mousePos.y - (resultsRef.current[0]?.getBoundingClientRect().top + resultsRef.current[0]?.getBoundingClientRect().height / 2)) < 30
+                  ? 'rgba(255, 255, 255, 0.05)' : 'transparent'
+              }}
             >
               {/* Result icon/favicon */}
               <div className="result-icon">
