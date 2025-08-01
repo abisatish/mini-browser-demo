@@ -121,10 +121,10 @@ export default function MiniBrowser() {
       // Request initial screenshot
       ws.send(JSON.stringify({ cmd: 'requestScreenshot' }));
       
-      // Auto-close the search overlay after 6 seconds
+      // Auto-close the search overlay after 8.5 seconds
       setTimeout(() => {
         setShowSearchResults(false);
-      }, 6000);
+      }, 8500);
     };
     
     ws.onmessage = e => {

@@ -98,18 +98,18 @@ export default function SearchResults({ query, results, onNavigate, onClose }: S
   useEffect(() => {
     const automateDemo = async () => {
       // Wait a bit before starting
-      await new Promise(resolve => setTimeout(resolve, 800));
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
       // Show narration
       setShowNarration(true);
       setNarrationText("I'll search for Pratyush Chakraborty on LinkedIn and find relevant profiles.");
       
       // Show mouse cursor
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise(resolve => setTimeout(resolve, 2000));
       setShowMouse(true);
       
       // Move mouse to first result
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 1500));
       const firstResult = resultsRef.current[0];
       if (firstResult) {
         const rect = firstResult.getBoundingClientRect();
@@ -119,7 +119,7 @@ export default function SearchResults({ query, results, onNavigate, onClose }: S
         // Animate mouse movement
         const startX = mousePos.x;
         const startY = mousePos.y;
-        const duration = 1000;
+        const duration = 1500; // Slower mouse movement
         const startTime = Date.now();
         
         const animateMouse = () => {
@@ -147,9 +147,9 @@ export default function SearchResults({ query, results, onNavigate, onClose }: S
                   if (onNavigate) {
                     onNavigate(results[0].link);
                   }
-                }, 200);
-              }, 1500);
-            }, 500);
+                }, 300); // Slightly longer click
+              }, 2000); // More time before clicking
+            }, 800); // Longer hover pause
           }
         };
         
