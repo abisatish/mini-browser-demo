@@ -180,7 +180,7 @@ export default function SearchResults({ query, results, onNavigate, onClose }: S
           {results.map((result, index) => (
             <div 
               key={index} 
-              ref={el => resultsRef.current[index] = el!}
+              ref={el => { if (el) resultsRef.current[index] = el; }}
               className="search-result-item"
               onClick={() => onNavigate(result.link)}
               style={{
