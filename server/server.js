@@ -204,7 +204,12 @@ const __dirname = path.dirname(__filename);
   
   // Handle failed requests
   page.on('requestfailed', request => {
-    console.log('Request failed:', request.url(), request.failure()?.errorText);
+    const url = request.url();
+    // Filter out common LinkedIn tracking/analytics failures
+    if (url.includes('/MQNt1aTRQzXHrf') || url.includes('/li/tscp/sct')) {
+      return; // Skip logging these
+    }
+    console.log('Request failed:', url, request.failure()?.errorText);
   });
 
   const app = express();
@@ -310,9 +315,12 @@ const __dirname = path.dirname(__filename);
                 });
                 console.log('📊 CONTENT CHECK:', visibleContent);
                 
-                // Monitor content changes for 10 seconds
+                // Monitor content changes and detect when stable
                 let previousTextLength = visibleContent.textLength;
                 let checkCount = 0;
+                let stableCount = 0;
+                let contentStabilized = false;
+                
                 const contentMonitor = setInterval(async () => {
                   checkCount++;
                   const currentContent = await page.evaluate(() => {
@@ -327,11 +335,54 @@ const __dirname = path.dirname(__filename);
                   if (currentContent.textLength !== previousTextLength) {
                     console.log(`📈 CONTENT CHANGED! Text length: ${previousTextLength} → ${currentContent.textLength} | Images: ${currentContent.hasImages} | Sections: ${currentContent.profileSections}`);
                     previousTextLength = currentContent.textLength;
+                    stableCount = 0; // Reset stability counter
+                  } else {
+                    stableCount++;
+                    // Log stability progress
+                    if (stableCount === 1) {
+                      console.log('🟡 Content stable for 1 second...');
+                    } else if (stableCount === 2) {
+                      console.log('🟡 Content stable for 2 seconds...');
+                    } else if (stableCount === 3) {
+                      console.log('🟡 Content stable for 3 seconds...');
+                    }
+                    
+                    // Wait for 4 seconds of stability and significant content
+                    if (stableCount === 4 && !contentStabilized && currentContent.textLength > 5000) {
+                      // Check for LinkedIn-specific completion indicators
+                      const profileComplete = await page.evaluate(() => {
+                        const hasExperience = document.querySelector('.experience-section, [data-section="experience"]') !== null;
+                        const hasAbout = document.querySelector('.about-section, [data-section="summary"]') !== null;
+                        const profileActions = document.querySelectorAll('.profile-actions, .pvs-profile-actions').length > 0;
+                        const spinners = document.querySelectorAll('.spinner, .loading, [data-loading="true"]').length;
+                        return { hasExperience, hasAbout, profileActions, spinners };
+                      });
+                      
+                      if (profileComplete.spinners === 0) {
+                        contentStabilized = true;
+                        console.log('\n💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚');
+                        console.log('✨✨✨ CONTENT STABILIZED! READY FOR INTERACTION! ✨✨✨');
+                        console.log(`📏 Final text length: ${currentContent.textLength}`);
+                        console.log(`🖼️  Images loaded: ${currentContent.hasImages}`);
+                        console.log(`📑 Profile sections: ${currentContent.profileSections}`);
+                        console.log(`✅ Has Experience: ${profileComplete.hasExperience}`);
+                        console.log(`✅ Has About: ${profileComplete.hasAbout}`);
+                        console.log(`✅ No spinners/loading indicators`);
+                        console.log(`⏱️  Time: ${new Date().toISOString()}`);
+                        console.log('💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚\n');
+                      } else {
+                        console.log(`🟠 Content stable but still loading (${profileComplete.spinners} spinners)`);
+                        stableCount = 3; // Keep checking
+                      }
+                    }
                   }
                   
-                  if (checkCount >= 10) { // Check for 10 seconds
+                  if (checkCount >= 20) { // Check for up to 20 seconds
                     clearInterval(contentMonitor);
-                    console.log('✅ Content monitoring complete');
+                    if (!contentStabilized) {
+                      console.log('⚠️  Content monitoring timeout - content may still be loading');
+                      console.log(`⚠️  Final state: Text length: ${currentContent.textLength} | Stable for: ${stableCount} seconds`);
+                    }
                   }
                 }, 1000);
               }).catch(() => {
