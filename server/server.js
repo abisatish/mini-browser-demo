@@ -351,11 +351,14 @@ const __dirname = path.dirname(__filename);
                     if (stableCount === 4 && !contentStabilized && currentContent.textLength > 5000) {
                       // Check for LinkedIn-specific completion indicators
                       const profileComplete = await page.evaluate(() => {
-                        const hasExperience = document.querySelector('.experience-section, [data-section="experience"]') !== null;
-                        const hasAbout = document.querySelector('.about-section, [data-section="summary"]') !== null;
-                        const profileActions = document.querySelectorAll('.profile-actions, .pvs-profile-actions').length > 0;
-                        const spinners = document.querySelectorAll('.spinner, .loading, [data-loading="true"]').length;
-                        return { hasExperience, hasAbout, profileActions, spinners };
+                        // Updated selectors for modern LinkedIn
+                        const hasExperience = document.querySelector('.experience-section, [data-section="experience"], #experience, .pv-profile-section__card-item-v2') !== null;
+                        const hasAbout = document.querySelector('.about-section, [data-section="summary"], #about, .pv-about-section') !== null;
+                        const profileActions = document.querySelectorAll('.profile-actions, .pvs-profile-actions, .pv-top-card-v3--list').length > 0;
+                        const spinners = document.querySelectorAll('.spinner, .loading, [data-loading="true"], .artdeco-spinner').length;
+                        const profileName = document.querySelector('.pv-text-details__left-panel h1, .text-heading-xlarge')?.innerText || 'Not found';
+                        const pageTitle = document.title;
+                        return { hasExperience, hasAbout, profileActions, spinners, profileName, pageTitle };
                       });
                       
                       if (profileComplete.spinners === 0) {
@@ -368,13 +371,17 @@ const __dirname = path.dirname(__filename);
                         console.log(`✅ Has Experience: ${profileComplete.hasExperience}`);
                         console.log(`✅ Has About: ${profileComplete.hasAbout}`);
                         console.log(`✅ No spinners/loading indicators`);
+                        console.log(`👤 Profile Name: ${profileComplete.profileName}`);
+                        console.log(`📄 Page Title: ${profileComplete.pageTitle}`);
                         console.log(`⏱️  Time: ${new Date().toISOString()}`);
                         console.log('💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚\n');
                         
                         // Auto-trigger profile scan if we're on a LinkedIn profile page
                         const currentUrl = page.url();
-                        if (currentUrl.includes('linkedin.com/in/')) {
+                        if (currentUrl.includes('linkedin.com/in/') && currentContent.textLength > 8000) {
                           console.log('🤖 AUTO-TRIGGERING PROFILE SCAN...');
+                          console.log(`📊 Scanning profile: ${profileComplete.profileName}`);
+                          console.log(`🔗 URL: ${currentUrl}`);
                           // Simulate the scanProfile command
                           setTimeout(async () => {
                             try {
@@ -403,16 +410,18 @@ const __dirname = path.dirname(__filename);
                                       content: [
                                         {
                                           type: "text",
-                                          text: `Analyze this LinkedIn profile and extract the following information in JSON format:
+                                          text: `You are helping analyze a professional profile page. Please extract the publicly visible professional information from this screenshot and return it in the following JSON format:
 {
-  "name": "Full name",
-  "currentPosition": "Current job title",
-  "currentCompany": "Current company name",
-  "previousCompanies": ["List of previous companies"],
-  "education": "Education details",
-  "skills": ["List of top skills"],
-  "summary": "Brief 2-3 sentence summary of their background and expertise"
-}`
+  "name": "Full name visible on the profile",
+  "currentPosition": "Current job title if visible",
+  "currentCompany": "Current company name if visible",
+  "previousCompanies": ["List of any previous companies shown"],
+  "education": "Educational background if visible",
+  "skills": ["Any skills or expertise mentioned"],
+  "summary": "A 2-3 sentence professional summary based on the visible information"
+}
+
+If any field is not visible in the screenshot, use "Not available" for that field. Only extract information that is clearly visible in the image.`
                                         },
                                         {
                                           type: "image_url",
@@ -446,7 +455,7 @@ const __dirname = path.dirname(__filename);
                             } catch (error) {
                               console.error('Auto profile scan error:', error);
                             }
-                          }, 1000); // Small delay to ensure UI is ready
+                          }, 1500); // 1.5 second delay to ensure content is fully rendered
                         }
                       } else {
                         console.log(`🟠 Content stable but still loading (${profileComplete.spinners} spinners)`);
