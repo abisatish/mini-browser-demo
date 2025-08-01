@@ -286,7 +286,7 @@ const __dirname = path.dirname(__filename);
               setTimeout(() => sendScreenshot(), 2000);
               
               // Wait for network idle and log
-              page.waitForLoadState('networkidle', { timeout: 5000 }).then(() => {
+              page.waitForLoadState('networkidle', { timeout: 5000 }).then(async () => {
                 console.log('\n\n🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥');
                 console.log('⚡⚡⚡ PAGE FULLY LOADED WITH NETWORK IDLE! ⚡⚡⚡');
                 console.log('🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥');
@@ -294,6 +294,46 @@ const __dirname = path.dirname(__filename);
                 console.log(`⏰ Time: ${new Date().toISOString()}`);
                 console.log('✅ All network requests completed!');
                 console.log('🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥\n\n');
+                
+                // Check for visible content
+                const visibleContent = await page.evaluate(() => {
+                  const body = document.body;
+                  const hasVisibleText = body && body.innerText && body.innerText.trim().length > 100;
+                  const mainElements = document.querySelectorAll('main, article, [role="main"], .profile-content, #main-content');
+                  const hasMainContent = mainElements.length > 0;
+                  return {
+                    hasVisibleText,
+                    textLength: body ? body.innerText.trim().length : 0,
+                    hasMainContent,
+                    mainElementCount: mainElements.length
+                  };
+                });
+                console.log('📊 CONTENT CHECK:', visibleContent);
+                
+                // Monitor content changes for 10 seconds
+                let previousTextLength = visibleContent.textLength;
+                let checkCount = 0;
+                const contentMonitor = setInterval(async () => {
+                  checkCount++;
+                  const currentContent = await page.evaluate(() => {
+                    const body = document.body;
+                    return {
+                      textLength: body ? body.innerText.trim().length : 0,
+                      hasImages: document.querySelectorAll('img').length,
+                      profileSections: document.querySelectorAll('.profile-section, .pv-profile-section, section').length
+                    };
+                  });
+                  
+                  if (currentContent.textLength !== previousTextLength) {
+                    console.log(`📈 CONTENT CHANGED! Text length: ${previousTextLength} → ${currentContent.textLength} | Images: ${currentContent.hasImages} | Sections: ${currentContent.profileSections}`);
+                    previousTextLength = currentContent.textLength;
+                  }
+                  
+                  if (checkCount >= 10) { // Check for 10 seconds
+                    clearInterval(contentMonitor);
+                    console.log('✅ Content monitoring complete');
+                  }
+                }, 1000);
               }).catch(() => {
                 console.log('⚠️  Network idle timeout - page may still be loading');
               });
