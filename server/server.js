@@ -261,6 +261,12 @@ const __dirname = path.dirname(__filename);
                 timeout: 30000 
               }).then(() => {
                 console.log('Navigation completed to:', m.url);
+                console.log('\n\n========================================');
+                console.log('🌐🌐🌐 WEBSITE FULLY LOADED! 🌐🌐🌐');
+                console.log('========================================');
+                console.log(`URL: ${m.url}`);
+                console.log(`Time: ${new Date().toISOString()}`);
+                console.log('========================================\n\n');
                 sendUrlUpdate();
                 sendScreenshot();
               }).catch((err) => {
@@ -273,6 +279,19 @@ const __dirname = path.dirname(__filename);
               setTimeout(() => sendScreenshot(), 1000);
               setTimeout(() => sendScreenshot(), 1500);
               setTimeout(() => sendScreenshot(), 2000);
+              
+              // Wait for network idle and log
+              page.waitForLoadState('networkidle', { timeout: 5000 }).then(() => {
+                console.log('\n\n🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥');
+                console.log('⚡⚡⚡ PAGE FULLY LOADED WITH NETWORK IDLE! ⚡⚡⚡');
+                console.log('🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥');
+                console.log(`🌐 URL: ${page.url()}`);
+                console.log(`⏰ Time: ${new Date().toISOString()}`);
+                console.log('✅ All network requests completed!');
+                console.log('🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥\n\n');
+              }).catch(() => {
+                console.log('⚠️  Network idle timeout - page may still be loading');
+              });
             } catch (navError) {
               console.error('Navigation error:', navError.message);
               await sendScreenshot();
