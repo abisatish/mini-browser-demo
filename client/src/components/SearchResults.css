@@ -1,0 +1,260 @@
+/* Search Results Overlay */
+.search-results-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Search Results Container */
+.search-results-container {
+  background: #1a1a1a;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+  animation: slideUp 0.3s ease-out;
+  overflow: hidden;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Search Results Header */
+.search-results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid #333;
+}
+
+.search-results-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: #ffffff;
+  margin: 0;
+}
+
+.search-results-close {
+  background: none;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.search-results-close:hover {
+  color: #ffffff;
+}
+
+/* Search Results List */
+.search-results-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+/* Scrollbar styling */
+.search-results-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.search-results-list::-webkit-scrollbar-track {
+  background: #2a2a2a;
+}
+
+.search-results-list::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 4px;
+}
+
+.search-results-list::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Search Result Item */
+.search-result-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 12px 24px;
+  cursor: pointer;
+  transition: background 0.2s;
+  gap: 16px;
+}
+
+.search-result-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Result Icon */
+.result-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #2a2a2a;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.result-icon img {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+.result-icon-placeholder {
+  color: #666;
+}
+
+/* Result Content */
+.result-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.result-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #ffffff;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-snippet {
+  font-size: 13px;
+  color: #999;
+  line-height: 1.4;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  margin-bottom: 4px;
+}
+
+.result-source {
+  font-size: 12px;
+  color: #666;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Special styling for specific sources */
+.search-result-item:has(.result-source:contains("orcid")) .result-icon {
+  background: #a6ce39;
+}
+
+.search-result-item:has(.result-source:contains("bits-pilani")) .result-icon {
+  background: #ff6b6b;
+}
+
+.search-result-item:has(.result-source:contains("bestadsontv")) .result-icon {
+  background: #ff4444;
+}
+
+.search-result-item:has(.result-source:contains("linkedin")) .result-icon {
+  background: #0077b5;
+}
+
+/* Progress Bar */
+.search-results-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid #333;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 4px;
+  background: #333;
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4a9eff 0%, #0066ff 100%);
+  width: 100%;
+  animation: progressAnimation 2s ease-in-out;
+}
+
+@keyframes progressAnimation {
+  from {
+    width: 0%;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+.progress-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #4a9eff;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+/* Icons for specific result types */
+.search-result-item[data-source="orcid"] .result-icon::before {
+  content: "ORCID";
+  font-size: 10px;
+  font-weight: bold;
+  color: white;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .search-results-container {
+    width: 95%;
+    max-height: 90vh;
+  }
+  
+  .search-result-item {
+    padding: 10px 16px;
+  }
+  
+  .search-results-header {
+    padding: 16px 20px;
+  }
+}

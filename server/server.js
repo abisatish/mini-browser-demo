@@ -3,6 +3,10 @@ import { WebSocketServer } from 'ws';
 import { chromium } from 'playwright';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import axios from 'axios';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -267,6 +271,87 @@ const __dirname = path.dirname(__filename);
             } catch (navError) {
               console.error('Navigation error:', navError.message);
               await sendScreenshot();
+            }
+            break;
+            
+          case 'search':
+            console.log('Searching for:', m.query);
+            try {
+              // Check if we have SerpAPI key
+              const serpApiKey = process.env.SERPAPI_KEY;
+              if (!serpApiKey) {
+                // If no API key, create mock results for demo
+                const mockResults = [
+                  {
+                    title: 'Pratyush Chakraborty LinkedIn profile',
+                    link: 'https://www.linkedin.com/in/pratyush-chakraborty',
+                    snippet: 'Pratyush Chakraborty - Facebook, LinkedIn - Clay.earth',
+                    source: 'linkedin',
+                    favicon: null
+                  },
+                  {
+                    title: 'orcid',
+                    link: 'https://orcid.org/0000-0003-1326-7567',
+                    snippet: '0000-0003-1326-7567 - ORCID',
+                    source: 'orcid',
+                    favicon: null
+                  },
+                  {
+                    title: 'bits-pilani',
+                    link: 'https://www.bits-pilani.ac.in/prof-pratyush-chakraborty',
+                    snippet: 'Prof. Pratyush Chakraborty - BITS Pilani',
+                    source: 'bits-pilani',
+                    favicon: null
+                  },
+                  {
+                    title: 'bestadsontv',
+                    link: 'https://bestadsontv.com/profile/pratyush-chakraborty',
+                    snippet: 'Pratyush Chakraborty - Best Ads on TV',
+                    source: 'bestadsontv',
+                    favicon: null
+                  },
+                  {
+                    title: 'linkedin',
+                    link: 'https://www.linkedin.com/posts/pratyush-chakraborty',
+                    snippet: 'Pratyush Chakraborty, Ph.D.\'s Post - LinkedIn',
+                    source: 'linkedin',
+                    favicon: null
+                  }
+                ];
+                
+                ws.send(JSON.stringify({ 
+                  type: 'searchResults', 
+                  query: m.query,
+                  results: mockResults 
+                }));
+              } else {
+                // Use real SerpAPI
+                const searchUrl = `https://serpapi.com/search.json?q=${encodeURIComponent(m.query)}&api_key=${serpApiKey}`;
+                const response = await axios.get(searchUrl);
+                const organicResults = response.data.organic_results || [];
+                
+                const results = organicResults.slice(0, 5).map(result => ({
+                  title: result.title,
+                  link: result.link,
+                  snippet: result.snippet,
+                  source: new URL(result.link).hostname.replace('www.', ''),
+                  favicon: result.favicon || null
+                }));
+                
+                ws.send(JSON.stringify({ 
+                  type: 'searchResults', 
+                  query: m.query,
+                  results 
+                }));
+              }
+            } catch (error) {
+              console.error('Search error:', error);
+              // Send empty results on error
+              ws.send(JSON.stringify({ 
+                type: 'searchResults', 
+                query: m.query,
+                results: [] 
+              }));
             }
             break;
             

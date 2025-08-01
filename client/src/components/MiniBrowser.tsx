@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import './MiniBrowser.css';
+import SearchResults from './SearchResults';
 
 export default function MiniBrowser() {
   const [img, setImg] = useState('');
@@ -10,6 +11,9 @@ export default function MiniBrowser() {
   const [isTypingActive, setIsTypingActive] = useState(false);
   const [typingText, setTypingText] = useState('');
   const [typingPosition, setTypingPosition] = useState<{x: number, y: number} | null>(null);
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const wsRef = useRef<WebSocket | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -54,6 +58,12 @@ export default function MiniBrowser() {
           const msg = JSON.parse(e.data);
           if (msg.type === 'url') {
             setUrl(msg.url);
+          } else if (msg.type === 'searchResults') {
+            // Handle search results from server
+            setSearchResults(msg.results);
+            setSearchQuery(msg.query);
+            setShowSearchResults(true);
+            setIsNavigating(false);
           } else if (msg.type === 'clickResult') {
             // Handle click result - only enable typing for input fields
             if (msg.isInputField) {
@@ -130,21 +140,53 @@ export default function MiniBrowser() {
       return;
     }
     
-    // Add http:// if no protocol specified
-    let navUrl = url.trim();
-    if (!navUrl.startsWith('http://') && !navUrl.startsWith('https://')) {
-      navUrl = 'https://' + navUrl;
-    }
+    const searchTerm = url.trim().toLowerCase();
     
+    // Check if this looks like a search query for LinkedIn
+    if (searchTerm.includes('linkedin') && !searchTerm.startsWith('http')) {
+      // It's a search query, not a URL
+      setIsNavigating(true);
+      console.log('Sending search command for:', searchTerm);
+      
+      try {
+        wsRef.current?.send(
+          JSON.stringify({ cmd: 'search', query: searchTerm })
+        );
+      } catch (error) {
+        console.error('Error sending search command:', error);
+      }
+    } else {
+      // Regular URL navigation
+      let navUrl = url.trim();
+      if (!navUrl.startsWith('http://') && !navUrl.startsWith('https://')) {
+        navUrl = 'https://' + navUrl;
+      }
+      
+      setIsNavigating(true);
+      console.log('Sending navigation command to:', navUrl);
+      
+      try {
+        wsRef.current?.send(
+          JSON.stringify({ cmd: 'nav', url: navUrl })
+        );
+      } catch (error) {
+        console.error('Error sending navigation command:', error);
+      }
+    }
+  };
+  
+  // Handle navigation from search results
+  const handleSearchResultNavigate = (resultUrl: string) => {
+    setShowSearchResults(false);
     setIsNavigating(true);
-    console.log('Sending navigation command to:', navUrl);
+    console.log('Navigating to search result:', resultUrl);
     
     try {
       wsRef.current?.send(
-        JSON.stringify({ cmd: 'nav', url: navUrl })
+        JSON.stringify({ cmd: 'nav', url: resultUrl })
       );
     } catch (error) {
-      console.error('Error sending navigation command:', error);
+      console.error('Error navigating to search result:', error);
     }
   };
 
@@ -311,6 +353,15 @@ export default function MiniBrowser() {
 
   return (
     <div className="browser-container">
+      {/* Search Results Overlay */}
+      {showSearchResults && (
+        <SearchResults
+          query={searchQuery}
+          results={searchResults}
+          onNavigate={handleSearchResultNavigate}
+          onClose={() => setShowSearchResults(false)}
+        />
+      )}
       {/* Browser Chrome */}
       <div className="browser-header">
         {/* Window Controls */}
