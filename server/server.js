@@ -370,6 +370,84 @@ const __dirname = path.dirname(__filename);
                         console.log(`✅ No spinners/loading indicators`);
                         console.log(`⏱️  Time: ${new Date().toISOString()}`);
                         console.log('💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚💚\n');
+                        
+                        // Auto-trigger profile scan if we're on a LinkedIn profile page
+                        const currentUrl = page.url();
+                        if (currentUrl.includes('linkedin.com/in/')) {
+                          console.log('🤖 AUTO-TRIGGERING PROFILE SCAN...');
+                          // Simulate the scanProfile command
+                          setTimeout(async () => {
+                            try {
+                              console.log('Starting LinkedIn profile scan');
+                              
+                              // Capture full page screenshot
+                              const fullPageScreenshot = await page.screenshot({ 
+                                type: 'jpeg', 
+                                quality: 80,
+                                fullPage: true
+                              });
+                              
+                              console.log('Captured full page screenshot, size:', fullPageScreenshot.length, 'bytes');
+                              
+                              // Analyze with GPT-4 Vision if API key exists
+                              if (openai && process.env.OPENAI_API_KEY) {
+                                console.log('OpenAI client initialized:', !!openai);
+                                console.log('API Key exists:', !!process.env.OPENAI_API_KEY);
+                                console.log('Sending to GPT-4 Vision for analysis...');
+                                
+                                const response = await openai.chat.completions.create({
+                                  model: "gpt-4o",
+                                  messages: [
+                                    {
+                                      role: "user",
+                                      content: [
+                                        {
+                                          type: "text",
+                                          text: `Analyze this LinkedIn profile and extract the following information in JSON format:
+{
+  "name": "Full name",
+  "currentPosition": "Current job title",
+  "currentCompany": "Current company name",
+  "previousCompanies": ["List of previous companies"],
+  "education": "Education details",
+  "skills": ["List of top skills"],
+  "summary": "Brief 2-3 sentence summary of their background and expertise"
+}`
+                                        },
+                                        {
+                                          type: "image_url",
+                                          image_url: {
+                                            url: `data:image/jpeg;base64,${fullPageScreenshot.toString('base64')}`,
+                                            detail: "high"
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  ],
+                                  max_tokens: 1000,
+                                  temperature: 0.3
+                                });
+                                
+                                const analysisResult = response.choices[0].message.content;
+                                console.log('GPT Analysis:', analysisResult);
+                                
+                                // Send the analysis result to the client
+                                ws.send(JSON.stringify({
+                                  type: 'profileAnalysis',
+                                  data: analysisResult
+                                }));
+                              } else {
+                                console.log('OpenAI client not configured, sending screenshot only');
+                                ws.send(JSON.stringify({
+                                  type: 'profileScreenshot',
+                                  data: fullPageScreenshot.toString('base64')
+                                }));
+                              }
+                            } catch (error) {
+                              console.error('Auto profile scan error:', error);
+                            }
+                          }, 1000); // Small delay to ensure UI is ready
+                        }
                       } else {
                         console.log(`🟠 Content stable but still loading (${profileComplete.spinners} spinners)`);
                         stableCount = 3; // Keep checking
