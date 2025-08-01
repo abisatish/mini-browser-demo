@@ -648,6 +648,89 @@ const __dirname = path.dirname(__filename);
             }
             break;
             
+          case 'scanProfile':
+            console.log('Starting LinkedIn profile scan');
+            try {
+              const currentUrl = page.url();
+              
+              // Only proceed if we're on a LinkedIn profile
+              if (!currentUrl.includes('linkedin.com/in/')) {
+                ws.send(JSON.stringify({ 
+                  type: 'scanError', 
+                  error: 'Not on a LinkedIn profile page' 
+                }));
+                break;
+              }
+              
+              // Visual scanning effect - quick scroll down then up
+              ws.send(JSON.stringify({ type: 'scanStatus', status: 'scanning', message: 'Analyzing profile...' }));
+              
+              // Get page height
+              const pageHeight = await page.evaluate(() => document.body.scrollHeight);
+              
+              // Quick scan down (visual effect)
+              const scanSteps = 8;
+              for (let i = 1; i <= scanSteps; i++) {
+                const scrollTo = (pageHeight / scanSteps) * i;
+                await page.evaluate((y) => window.scrollTo({ top: y, behavior: 'auto' }), scrollTo);
+                await page.waitForTimeout(50); // Very quick pauses for visual effect
+                await sendScreenshot(); // Show the scrolling to user
+              }
+              
+              // Quick scan back up
+              for (let i = scanSteps - 1; i >= 0; i--) {
+                const scrollTo = (pageHeight / scanSteps) * i;
+                await page.evaluate((y) => window.scrollTo({ top: y, behavior: 'auto' }), scrollTo);
+                await page.waitForTimeout(30);
+                await sendScreenshot();
+              }
+              
+              // Now take the full page screenshot
+              ws.send(JSON.stringify({ type: 'scanStatus', status: 'capturing', message: 'Capturing profile data...' }));
+              
+              const fullPageScreenshot = await page.screenshot({ 
+                type: 'jpeg', 
+                quality: 80,
+                fullPage: true
+              });
+              
+              console.log('Captured full page screenshot');
+              
+              // Mock analysis for now (since we need OpenAI API key)
+              ws.send(JSON.stringify({ type: 'scanStatus', status: 'analyzing', message: 'Processing with AI...' }));
+              
+              // Simulate processing time
+              await new Promise(resolve => setTimeout(resolve, 1500));
+              
+              // Send mock results
+              const mockAnalysis = {
+                name: "Pratyush Chakraborty",
+                currentPosition: "Software Engineer",
+                currentCompany: "Meta/Facebook",
+                previousCompanies: ["Google", "Microsoft"],
+                education: "BITS Pilani",
+                skills: ["JavaScript", "React", "Node.js", "Python"],
+                summary: "Experienced software engineer with background in full-stack development and machine learning."
+              };
+              
+              ws.send(JSON.stringify({ 
+                type: 'profileAnalysis', 
+                analysis: mockAnalysis,
+                scanComplete: true
+              }));
+              
+              // Stay at top of page
+              await sendScreenshot();
+              
+            } catch (error) {
+              console.error('Profile scan error:', error);
+              ws.send(JSON.stringify({ 
+                type: 'scanError', 
+                error: error.message 
+              }));
+            }
+            break;
+            
           case 'goForward':
             console.log('Going forward');
             try {

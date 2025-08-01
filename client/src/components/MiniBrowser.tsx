@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import './MiniBrowser.css';
 import SearchResults from './SearchResults';
+import ProfileScanner from './ProfileScanner';
 
 export default function MiniBrowser() {
   const [img, setImg] = useState('');
@@ -12,6 +13,7 @@ export default function MiniBrowser() {
   const [typingText, setTypingText] = useState('');
   const [typingPosition, setTypingPosition] = useState<{x: number, y: number} | null>(null);
   const [showSearchResults, setShowSearchResults] = useState(true); // Start with overlay visible
+  const [showProfileScanner, setShowProfileScanner] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([
     {
       title: 'Pratyush Chakraborty LinkedIn profile',
@@ -438,6 +440,13 @@ export default function MiniBrowser() {
           onClose={() => setShowSearchResults(false)}
         />
       )}
+      
+      {/* Profile Scanner */}
+      <ProfileScanner
+        wsRef={wsRef}
+        visible={showProfileScanner}
+        onClose={() => setShowProfileScanner(false)}
+      />
       {/* Browser Chrome */}
       <div className="browser-header">
         {/* Window Controls */}
@@ -563,6 +572,23 @@ export default function MiniBrowser() {
                 Refresh
               </button>
               <div className="menu-separator"></div>
+              <button 
+                onClick={() => {
+                  setShowMenu(false);
+                  // Check if we're on LinkedIn
+                  if (url.includes('linkedin.com/in/')) {
+                    setShowProfileScanner(true);
+                  } else {
+                    alert('Please navigate to a LinkedIn profile first');
+                  }
+                }}
+                className="menu-item"
+              >
+                <svg className="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                </svg>
+                Scan Profile
+              </button>
               <button className="menu-item">
                 <svg className="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />

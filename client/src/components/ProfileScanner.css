@@ -1,0 +1,255 @@
+/* Profile Scanner Overlay */
+.profile-scanner-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* Scanner Container */
+.profile-scanner-container {
+  background: #1a1a1a;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 500px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+/* Scanner Header */
+.scanner-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid #333;
+}
+
+.scanner-header h3 {
+  margin: 0;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.scanner-close {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.scanner-close:hover {
+  color: #fff;
+}
+
+/* Scanner Content */
+.scanner-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+/* Loading State */
+.scanner-loading {
+  text-align: center;
+  padding: 40px 0;
+}
+
+.scan-animation {
+  width: 200px;
+  height: 100px;
+  margin: 0 auto 30px;
+  position: relative;
+  background: linear-gradient(to bottom, 
+    transparent 0%, 
+    rgba(74, 158, 255, 0.1) 50%, 
+    transparent 100%
+  );
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.scan-line {
+  position: absolute;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(to right, 
+    transparent 0%, 
+    #4a9eff 50%, 
+    transparent 100%
+  );
+  animation: scan 2s ease-in-out infinite;
+}
+
+@keyframes scan {
+  0% { top: 0; }
+  50% { top: calc(100% - 2px); }
+  100% { top: 0; }
+}
+
+.status-message {
+  color: #fff;
+  font-size: 16px;
+  margin-bottom: 20px;
+}
+
+.progress-dots {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  font-size: 14px;
+}
+
+.progress-dots span {
+  color: #666;
+  position: relative;
+  padding-left: 20px;
+  transition: color 0.3s;
+}
+
+.progress-dots span::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #333;
+  transition: all 0.3s;
+}
+
+.progress-dots span.active {
+  color: #4a9eff;
+}
+
+.progress-dots span.active::before {
+  background: #4a9eff;
+  box-shadow: 0 0 10px rgba(74, 158, 255, 0.5);
+}
+
+/* Results */
+.scanner-results {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.result-section {
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #333;
+}
+
+.result-section:last-child {
+  border-bottom: none;
+}
+
+.result-section h4 {
+  color: #fff;
+  font-size: 20px;
+  margin: 0 0 8px 0;
+}
+
+.result-section h5 {
+  color: #4a9eff;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 12px 0;
+}
+
+.current-role {
+  color: #ccc;
+  font-size: 16px;
+  margin: 0;
+}
+
+.result-section ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.result-section li {
+  color: #ccc;
+  padding: 4px 0;
+  padding-left: 16px;
+  position: relative;
+}
+
+.result-section li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: #4a9eff;
+}
+
+.skills-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.skill-tag {
+  background: rgba(74, 158, 255, 0.2);
+  color: #4a9eff;
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 13px;
+  border: 1px solid rgba(74, 158, 255, 0.3);
+}
+
+.result-section p {
+  color: #ccc;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Error State */
+.scanner-error {
+  text-align: center;
+  padding: 40px;
+}
+
+.scanner-error p {
+  color: #ff6b6b;
+  font-size: 16px;
+}
+
+/* Scrollbar */
+.scanner-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scanner-content::-webkit-scrollbar-track {
+  background: #2a2a2a;
+}
+
+.scanner-content::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 4px;
+}
+
+.scanner-content::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
