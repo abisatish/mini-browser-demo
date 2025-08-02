@@ -906,15 +906,14 @@ Use "Not available" for fields not visible. Return only the JSON, no other text.
         // Navigate to the URL with more lenient settings
         console.log('🔵 API: Navigating to LinkedIn URL...');
         try {
-          // Navigate with minimal waiting - just get the page loaded
+          // Navigate and immediately continue - no waiting
           await page.goto(linkedInUrl, { waitUntil: 'commit', timeout: 15000 });
-          // Quick wait for initial render
-          await page.waitForTimeout(200);
+          console.log('🔵 API: Navigation complete, no wait needed');
         } catch (navError) {
           console.error('🔵 API: Navigation error:', navError.message);
-          // Fallback with slightly longer timeout
+          // Fallback - still no wait
           await page.goto(linkedInUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
-          await page.waitForTimeout(300);
+          console.log('🔵 API: Fallback navigation complete');
         }
         
         // EXPERIMENT: Take screenshot after networkidle
