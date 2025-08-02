@@ -23,6 +23,7 @@ export default function ProfileScanner({ wsRef, visible, onClose }: ProfileScann
   const [statusMessage, setStatusMessage] = useState('Processing profile...');
   const [analysis, setAnalysis] = useState<ProfileAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isApiScan, setIsApiScan] = useState(false);
   
   // Force re-render when status changes
   useEffect(() => {
@@ -63,8 +64,9 @@ export default function ProfileScanner({ wsRef, visible, onClose }: ProfileScann
       try {
         const msg = JSON.parse(event.data);
         
-        // Only process messages relevant to profile scanning
-        if (msg.type === 'scanStatus' || msg.type === 'profileAnalysis' || msg.type === 'scanError') {
+        // Process all scanning-related messages
+        if (msg.type === 'scanStatus' || msg.type === 'profileAnalysis' || msg.type === 'scanError' || 
+            msg.type === 'apiScanStart' || msg.type === 'apiScanComplete' || msg.type === 'apiScanError') {
           console.log('ProfileScanner received:', msg.type, msg);
           
           switch (msg.type) {
@@ -81,6 +83,27 @@ export default function ProfileScanner({ wsRef, visible, onClose }: ProfileScann
             case 'scanError':
               setError(msg.error);
               setScanStatus('idle');
+              break;
+              
+            // API scan messages
+            case 'apiScanStart':
+              setScanStatus('scanning');
+              setStatusMessage(msg.message || 'Analyzing LinkedIn Profile via API...');
+              setError(null);
+              setAnalysis(null);
+              setIsApiScan(true);
+              break;
+              
+            case 'apiScanComplete':
+              setAnalysis(msg.linkedInData);
+              setScanStatus('complete');
+              setIsApiScan(false);
+              break;
+              
+            case 'apiScanError':
+              setError(msg.error);
+              setScanStatus('idle');
+              setIsApiScan(false);
               break;
           }
         }
@@ -110,7 +133,8 @@ export default function ProfileScanner({ wsRef, visible, onClose }: ProfileScann
     return () => clearTimeout(timeout);
   }, [scanStatus, visible]);
   
-  if (!visible) return null;
+  // Show if either manually visible or during API scan
+  if (!visible && !isApiScan) return null;
   
   return (
     <div className="profile-scanner-overlay">
@@ -168,9 +192,9 @@ export default function ProfileScanner({ wsRef, visible, onClose }: ProfileScann
         </div>
       </div>
       
-      {/* Face ID Scanner Overlay */}
+      {/* Face ID Scanner Overlay - Always show for API scans */}
       <ScanningIndicator 
-        isScanning={scanStatus !== 'idle' && scanStatus !== 'complete' && !error}
+        isScanning={(scanStatus !== 'idle' && scanStatus !== 'complete' && !error) || isApiScan}
         message={statusMessage || 'Initializing scan...'}
       />
     </div>

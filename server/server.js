@@ -470,6 +470,15 @@ const __dirname = path.dirname(__filename);
         console.log('🔵 API CALL: /contextualized endpoint');
         console.log('📍 API: Navigating to LinkedIn URL using existing browser:', linkedInUrl);
         
+        // Notify all WebSocket clients that API scanning is starting
+        const connectedClients = Array.from(wss.clients).filter(client => client.readyState === client.OPEN);
+        connectedClients.forEach(client => {
+          client.send(JSON.stringify({
+            type: 'apiScanStart',
+            message: 'Analyzing LinkedIn Profile via API...'
+          }));
+        });
+        
         // Navigate to the URL
         await page.goto(linkedInUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
         
@@ -489,29 +498,15 @@ const __dirname = path.dirname(__filename);
           console.log('🔵 API: Could not find profile sections, continuing anyway');
         }
         
-        // Scroll to trigger lazy-loaded content
-        console.log('🔵 API: Scrolling to load lazy content...');
+        // Quick scroll to trigger lazy-loaded content
+        console.log('🔵 API: Quick scroll to trigger lazy content...');
         await page.evaluate(async () => {
-          // Scroll down to bottom
-          await new Promise((resolve) => {
-            let totalHeight = 0;
-            const distance = 100;
-            const timer = setInterval(() => {
-              const scrollHeight = document.body.scrollHeight;
-              window.scrollBy(0, distance);
-              totalHeight += distance;
-              
-              if(totalHeight >= scrollHeight){
-                clearInterval(timer);
-                resolve();
-              }
-            }, 100);
-          });
-          
-          // Scroll back to top
+          // Quickly scroll down and back up
+          window.scrollTo(0, document.body.scrollHeight);
+          await new Promise(resolve => setTimeout(resolve, 500));
           window.scrollTo(0, 0);
         });
-        console.log('🔵 API: Scrolling complete');
+        console.log('🔵 API: Quick scroll complete');
         
         // Monitor content changes and wait for stability (same logic as fetchLinkedInData)
         let previousTextLength = 0;
@@ -606,6 +601,15 @@ const __dirname = path.dirname(__filename);
         linkedInData
       );
 
+      // Notify WebSocket clients that scanning is complete
+      const connectedClients = Array.from(wss.clients).filter(client => client.readyState === client.OPEN);
+      connectedClients.forEach(client => {
+        client.send(JSON.stringify({
+          type: 'apiScanComplete',
+          linkedInData: linkedInData
+        }));
+      });
+      
       res.json({
         status: 'success',
         answers: answeredQueries,
@@ -615,6 +619,16 @@ const __dirname = path.dirname(__filename);
 
     } catch (error) {
       console.error('Error in contextualized endpoint:', error);
+      
+      // Notify WebSocket clients that scanning failed
+      const connectedClients = Array.from(wss.clients).filter(client => client.readyState === client.OPEN);
+      connectedClients.forEach(client => {
+        client.send(JSON.stringify({
+          type: 'apiScanError',
+          error: error.message || 'Failed to process LinkedIn data'
+        }));
+      });
+      
       res.status(500).json({
         status: 'error',
         message: error.message
