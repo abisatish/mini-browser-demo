@@ -482,96 +482,14 @@ const __dirname = path.dirname(__filename);
         // Navigate to the URL
         await page.goto(linkedInUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
         
-        // Wait for network idle
-        try {
-          await page.waitForLoadState('networkidle', { timeout: 5000 });
-          console.log('🔵 API: Page reached network idle state');
-        } catch (e) {
-          console.log('🔵 API: Timeout waiting for network idle, continuing anyway');
-        }
-        
-        // Wait for LinkedIn profile elements
-        try {
-          await page.waitForSelector('section.artdeco-card', { timeout: 5000 });
-          console.log('🔵 API: LinkedIn profile sections loaded');
-        } catch (e) {
-          console.log('🔵 API: Could not find profile sections, continuing anyway');
-        }
-        
-        // Quick scroll to trigger lazy-loaded content
-        console.log('🔵 API: Quick scroll to trigger lazy content...');
-        await page.evaluate(async () => {
-          // Quickly scroll down and back up
-          window.scrollTo(0, document.body.scrollHeight);
-          await new Promise(resolve => setTimeout(resolve, 500));
-          window.scrollTo(0, 0);
-        });
-        console.log('🔵 API: Quick scroll complete');
-        
-        // Monitor content changes and wait for stability (same logic as fetchLinkedInData)
-        let previousTextLength = 0;
-        let stableCount = 0;
-        let contentStabilized = false;
-        const maxChecks = 20; // Check for up to 20 seconds
-        
-        for (let checkCount = 0; checkCount < maxChecks && !contentStabilized; checkCount++) {
-          const currentContent = await page.evaluate(() => {
-            const body = document.body;
-            return {
-              textLength: body ? body.innerText.trim().length : 0,
-              hasImages: document.querySelectorAll('img').length,
-              profileSections: document.querySelectorAll('.profile-section, .pv-profile-section, section').length
-            };
-          });
-          
-          if (currentContent.textLength !== previousTextLength) {
-            console.log(`🔵 API: Content changing: ${previousTextLength} → ${currentContent.textLength} chars`);
-            previousTextLength = currentContent.textLength;
-            stableCount = 0;
-          } else {
-            stableCount++;
-            
-            // Wait for 2 seconds of stability and significant content
-            if (stableCount === 2 && currentContent.textLength > 5000) {
-              // Check for LinkedIn-specific completion indicators
-              const profileComplete = await page.evaluate(() => {
-                const spinners = document.querySelectorAll('.spinner, .loading, [data-loading="true"], .artdeco-spinner').length;
-                const hasExperience = document.querySelector('.experience-section, [data-section="experience"], #experience, .pv-profile-section__card-item-v2') !== null;
-                const hasAbout = document.querySelector('.about-section, [data-section="summary"], #about, .pv-about-section') !== null;
-                return { spinners, hasExperience, hasAbout };
-              });
-              
-              if (profileComplete.spinners === 0) {
-                contentStabilized = true;
-                console.log('🔵 API: ✅ Content stabilized! Profile fully loaded');
-                console.log(`🔵 API: 📏 Final content length: ${currentContent.textLength} chars`);
-                console.log(`🖼️  Images: ${currentContent.hasImages}`);
-                console.log(`📑 Sections: ${currentContent.profileSections}`);
-                
-              }
-            }
-          }
-          
-          // Wait 1 second before next check
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-        
-        if (!contentStabilized) {
-          console.log('🔵 API: ⚠️  Content monitoring timeout - proceeding with capture');
-        }
-        
-        // Brief delay after stabilization - ensures content is fully rendered
-        console.log('🔵 API: Waiting 0.8 seconds for final render...');
-        await new Promise(resolve => setTimeout(resolve, 800));
-        
-        // Take screenshot for GPT analysis
-        console.log('🔵 API: Capturing full page screenshot...');
+        // EXPERIMENT: Take screenshot immediately
+        console.log('🔵 API: EXPERIMENT - Taking immediate screenshot...');
         const screenshot = await page.screenshot({ 
           type: 'jpeg', 
           quality: 80,
           fullPage: true
         });
-        console.log('🔵 API: Screenshot captured, size:', screenshot.length, 'bytes');
+        console.log('🔵 API: Immediate screenshot captured, size:', screenshot.length, 'bytes');
         
         // Extract LinkedIn data from screenshot
         linkedInData = await extractLinkedInDataFromScreenshot(screenshot);
