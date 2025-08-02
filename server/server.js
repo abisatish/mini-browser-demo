@@ -498,15 +498,26 @@ const __dirname = path.dirname(__filename);
           console.log('🔵 API: Could not find profile sections, continuing anyway');
         }
         
-        // Quick scroll to trigger lazy-loaded content
-        console.log('🔵 API: Quick scroll to trigger lazy content...');
-        await page.evaluate(async () => {
-          // Quickly scroll down and back up
-          window.scrollTo(0, document.body.scrollHeight);
-          await new Promise(resolve => setTimeout(resolve, 500));
-          window.scrollTo(0, 0);
+        // Update status to show we're loading content
+        connectedClients.forEach(client => {
+          client.send(JSON.stringify({
+            type: 'scanStatus',
+            status: 'scanning',
+            message: 'Loading profile content...'
+          }));
         });
-        console.log('🔵 API: Quick scroll complete');
+        
+        // Natural smooth scroll to trigger lazy-loaded content
+        console.log('🔵 API: Smooth scroll to trigger lazy content...');
+        await page.evaluate(async () => {
+          // Smooth scroll down
+          window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          // Smooth scroll back to top
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          await new Promise(resolve => setTimeout(resolve, 800));
+        });
+        console.log('🔵 API: Smooth scroll complete');
         
         // Monitor content changes and wait for stability (same logic as fetchLinkedInData)
         let previousTextLength = 0;
@@ -531,8 +542,8 @@ const __dirname = path.dirname(__filename);
           } else {
             stableCount++;
             
-            // Wait for 3 seconds of stability and significant content
-            if (stableCount === 3 && currentContent.textLength > 5000) {
+            // Wait for 2 seconds of stability and significant content (faster than 3)
+            if (stableCount === 2 && currentContent.textLength > 5000) {
               // Check for LinkedIn-specific completion indicators
               const profileComplete = await page.evaluate(() => {
                 const spinners = document.querySelectorAll('.spinner, .loading, [data-loading="true"], .artdeco-spinner').length;
@@ -547,6 +558,15 @@ const __dirname = path.dirname(__filename);
                 console.log(`🔵 API: 📏 Final content length: ${currentContent.textLength} chars`);
                 console.log(`🖼️  Images: ${currentContent.hasImages}`);
                 console.log(`📑 Sections: ${currentContent.profileSections}`);
+                
+                // Update status
+                connectedClients.forEach(client => {
+                  client.send(JSON.stringify({
+                    type: 'scanStatus',
+                    status: 'capturing',
+                    message: 'Profile loaded, preparing capture...'
+                  }));
+                });
               }
             }
           }
@@ -559,9 +579,18 @@ const __dirname = path.dirname(__filename);
           console.log('🔵 API: ⚠️  Content monitoring timeout - proceeding with capture');
         }
         
-        // Critical delay after stabilization - ensures content is fully rendered
-        console.log('🔵 API: Waiting 1.5 seconds for final render...');
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        // Short delay after stabilization - ensures content is fully rendered
+        console.log('🔵 API: Waiting 1 second for final render...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Update status to analyzing
+        connectedClients.forEach(client => {
+          client.send(JSON.stringify({
+            type: 'scanStatus',
+            status: 'analyzing',
+            message: 'Analyzing profile information...'
+          }));
+        });
         
         // Take screenshot for GPT analysis
         console.log('🔵 API: Capturing full page screenshot...');
