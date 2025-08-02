@@ -8,8 +8,14 @@ import dotenv from 'dotenv';
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import cors from 'cors';
+import fs from 'fs/promises';
+import fsSync from 'fs';
 
 dotenv.config();
+
+console.log('🔵 STARTUP: Environment variables loaded');
+console.log('🔵 STARTUP: OPENAI_API_KEY exists:', !!process.env.OPENAI_API_KEY);
+console.log('🔵 STARTUP: ANTHROPIC_API_KEY exists:', !!process.env.ANTHROPIC_API_KEY);
 
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
@@ -18,6 +24,9 @@ const openai = process.env.OPENAI_API_KEY ? new OpenAI({
 const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY
 }) : null;
+
+console.log('🔵 STARTUP: OpenAI client initialized:', !!openai);
+console.log('🔵 STARTUP: Anthropic client initialized:', !!anthropic);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -388,7 +397,6 @@ Use "Not available" for fields not visible. Return only the JSON, no other text.
     }
     
     // Save screenshot for debugging ANY problematic response
-    const fs = require('fs').promises;
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     
     // Check for refusal responses
@@ -669,8 +677,6 @@ Use "Not available" for fields not visible. Return only the JSON, no other text.
   // Temporary endpoint to list error screenshots (for debugging)
   app.get('/api/debug/screenshots', async (req, res) => {
     try {
-      const fs = require('fs').promises;
-      const path = require('path');
       
       // List all error screenshots in /tmp
       const files = await fs.readdir('/tmp');
@@ -719,10 +725,9 @@ Use "Not available" for fields not visible. Return only the JSON, no other text.
         });
       }
       
-      const fs = require('fs');
       
       // Check if file exists
-      if (!fs.existsSync(filePath)) {
+      if (!fsSync.existsSync(filePath)) {
         return res.status(404).json({
           status: 'error',
           message: 'Screenshot not found'
