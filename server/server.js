@@ -791,12 +791,12 @@ Use "Not available" for fields not visible. Return only the JSON, no other text.
         try {
           await page.goto(linkedInUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
           // Wait a bit for dynamic content
-          await page.waitForTimeout(3000);
+          await page.waitForTimeout(1500); // Reduced from 3000ms
         } catch (navError) {
           console.error('🔵 API: Navigation error:', navError.message);
           // Try one more time with even more lenient settings
           await page.goto(linkedInUrl, { waitUntil: 'load', timeout: 30000 });
-          await page.waitForTimeout(2000);
+          await page.waitForTimeout(1000); // Reduced from 2000ms
         }
         
         // EXPERIMENT: Take screenshot after networkidle
