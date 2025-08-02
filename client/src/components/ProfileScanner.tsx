@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import './ProfileScanner.css';
+import { ScanningIndicator } from './ScanningIndicator';
 
 interface ProfileAnalysis {
   name: string;
@@ -163,28 +164,15 @@ export default function ProfileScanner({ wsRef, visible, onClose }: ProfileScann
                 <p>{analysis.summary}</p>
               </div>
             </div>
-          ) : (
-            <div className="scanner-loading">
-              <div className="scan-animation">
-                <div className="scan-line"></div>
-                {scanStatus === 'analyzing' && (
-                  <div className="ai-thinking">
-                    <div className="thinking-dot"></div>
-                    <div className="thinking-dot"></div>
-                    <div className="thinking-dot"></div>
-                  </div>
-                )}
-              </div>
-              <p className="status-message">{statusMessage || 'Initializing scan...'}</p>
-              <div className="progress-dots">
-                <span className={scanStatus === 'scanning' || scanStatus === 'capturing' || scanStatus === 'analyzing' ? 'active' : ''}>Scanning</span>
-                <span className={scanStatus === 'capturing' || scanStatus === 'analyzing' ? 'active' : ''}>Capturing</span>
-                <span className={scanStatus === 'analyzing' ? 'active' : ''}>Analyzing</span>
-              </div>
-            </div>
-          )}
+          ) : null}
         </div>
       </div>
+      
+      {/* Face ID Scanner Overlay */}
+      <ScanningIndicator 
+        isScanning={scanStatus !== 'idle' && scanStatus !== 'complete' && !error}
+        message={statusMessage || 'Initializing scan...'}
+      />
     </div>
   );
 }

@@ -489,6 +489,30 @@ const __dirname = path.dirname(__filename);
           console.log('🔵 API: Could not find profile sections, continuing anyway');
         }
         
+        // Scroll to trigger lazy-loaded content
+        console.log('🔵 API: Scrolling to load lazy content...');
+        await page.evaluate(async () => {
+          // Scroll down to bottom
+          await new Promise((resolve) => {
+            let totalHeight = 0;
+            const distance = 100;
+            const timer = setInterval(() => {
+              const scrollHeight = document.body.scrollHeight;
+              window.scrollBy(0, distance);
+              totalHeight += distance;
+              
+              if(totalHeight >= scrollHeight){
+                clearInterval(timer);
+                resolve();
+              }
+            }, 100);
+          });
+          
+          // Scroll back to top
+          window.scrollTo(0, 0);
+        });
+        console.log('🔵 API: Scrolling complete');
+        
         // Monitor content changes and wait for stability (same logic as fetchLinkedInData)
         let previousTextLength = 0;
         let stableCount = 0;
