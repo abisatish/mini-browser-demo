@@ -235,6 +235,122 @@ const __dirname = path.dirname(__filename);
   app.use(express.json());
   app.use(express.static(path.join(__dirname, '../client/dist')));
 
+  // Optimized function to extract LinkedIn data AND answer questions in one call
+  async function extractLinkedInAndAnswerQueries(screenshot, subqueries) {
+    if (!anthropic && !openai) {
+      throw new Error('No AI client configured (need either Anthropic or OpenAI API key)');
+    }
+
+    console.log('🔵 API: Starting combined extraction and Q&A...');
+    
+    let content;
+    
+    // Try Claude first if available
+    if (anthropic) {
+      console.log('🔵 API: Using Claude for combined analysis');
+      try {
+        const startTime = Date.now();
+        
+        const claudeResponse = await anthropic.messages.create({
+          model: "claude-3-5-sonnet-20241022",
+          max_tokens: 1500,
+          temperature: 0.3,
+          messages: [{
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `Analyze this LinkedIn profile screenshot and provide:
+
+1. First, extract the profile data in this JSON format:
+{
+  "profileData": {
+    "name": "person's full name",
+    "currentPosition": "current job title",
+    "currentCompany": "current employer",
+    "previousCompanies": ["array of previous companies"],
+    "education": "education details",
+    "skills": ["array of skills"],
+    "summary": "professional summary"
+  }
+}
+
+2. Then answer these specific questions:
+${subqueries.map((q, i) => `${i + 1}. ${q}`).join('\n')}
+
+Return a JSON object with both profileData and answers array like:
+{
+  "profileData": { ... },
+  "answers": [
+    {"query": "question 1", "answer": "answer 1"},
+    {"query": "question 2", "answer": "answer 2"}
+  ]
+}
+
+Use "Not available" for any fields not visible. Be concise and accurate.`
+              },
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: "image/jpeg",
+                  data: screenshot.toString('base64')
+                }
+              }
+            ]
+          }]
+        });
+        
+        const endTime = Date.now();
+        console.log('🔵 API: Claude combined call completed in:', endTime - startTime, 'ms');
+        content = claudeResponse.content[0].text;
+        
+      } catch (claudeError) {
+        console.error('🔵 API: Claude failed, falling back to OpenAI');
+        // Similar logic for OpenAI fallback
+        if (openai) {
+          const openaiResponse = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [{
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: `Analyze this LinkedIn profile screenshot and provide both profile data extraction and answers to specific questions. Return JSON with profileData object and answers array.`
+                },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: `data:image/jpeg;base64,${screenshot.toString('base64')}`,
+                    detail: "high"
+                  }
+                }
+              ]
+            }],
+            max_tokens: 1500,
+            temperature: 0.3
+          });
+          content = openaiResponse.choices[0].message.content;
+        } else {
+          throw claudeError;
+        }
+      }
+    }
+    
+    // Parse the combined response
+    try {
+      const jsonMatch = content.match(/```json\n?([\s\S]*?)\n?```/) || [null, content];
+      const jsonString = jsonMatch[1] || content;
+      const parsed = JSON.parse(jsonString.trim());
+      
+      console.log('🔵 API: Combined response parsed successfully');
+      return parsed;
+    } catch (e) {
+      console.error('🔵 API: Failed to parse combined response:', e);
+      throw new Error('Failed to parse AI response');
+    }
+  }
+
   // Helper functions for contextualized endpoint
   async function extractLinkedInDataFromScreenshot(screenshot) {
     // Try Claude first, fallback to OpenAI
@@ -762,6 +878,7 @@ Use "Not available" for fields not visible. Return only the JSON, no other text.
 
       // Get LinkedIn data from current page or navigate if URL provided
       let linkedInData;
+      let answeredQueries;
       
       if (linkedInUrl) {
         // Navigate to LinkedIn URL using the existing browser session
@@ -812,13 +929,17 @@ Use "Not available" for fields not visible. Return only the JSON, no other text.
         });
         console.log('🔵 API: Immediate screenshot captured, size:', screenshot.length, 'bytes');
         
-        // Extract LinkedIn data from screenshot
-        console.log('🔵 API: Starting LinkedIn data extraction...');
+        // Extract LinkedIn data AND answer queries in one call
+        console.log('🔵 API: Starting combined extraction and Q&A...');
         try {
-          linkedInData = await extractLinkedInDataFromScreenshot(screenshot);
-          console.log('🔵 API: LinkedIn data extraction successful:', JSON.stringify(linkedInData, null, 2));
+          const combinedResult = await extractLinkedInAndAnswerQueries(screenshot, subqueries);
+          linkedInData = combinedResult.profileData;
+          answeredQueries = combinedResult.answers;
+          console.log('🔵 API: Combined operation successful');
+          console.log('🔵 API: Profile data:', JSON.stringify(linkedInData, null, 2));
+          console.log('🔵 API: Answers:', JSON.stringify(answeredQueries, null, 2));
         } catch (extractError) {
-          console.error('🔵 API: LinkedIn data extraction failed:', extractError.message);
+          console.error('🔵 API: Combined operation failed:', extractError.message);
           throw extractError;
         }
       } else {
@@ -832,8 +953,10 @@ Use "Not available" for fields not visible. Return only the JSON, no other text.
             fullPage: true
           });
           
-          // Extract data from current page
-          linkedInData = await extractLinkedInDataFromScreenshot(screenshot);
+          // Extract data AND answer queries in one call
+          const combinedResult = await extractLinkedInAndAnswerQueries(screenshot, subqueries);
+          linkedInData = combinedResult.profileData;
+          answeredQueries = combinedResult.answers;
         } else {
           return res.status(400).json({
             status: 'error',
@@ -841,12 +964,6 @@ Use "Not available" for fields not visible. Return only the JSON, no other text.
           });
         }
       }
-      
-      // Generate contextualized answers using LinkedIn data
-      const answeredQueries = await generateContextualizedAnswers(
-        subqueries,
-        linkedInData
-      );
 
       // Notify WebSocket clients that scanning is complete
       const connectedClients = Array.from(wss.clients).filter(client => client.readyState === client.OPEN);
