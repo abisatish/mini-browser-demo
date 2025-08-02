@@ -23,7 +23,6 @@ export default function ProfileScanner({ wsRef, visible, onClose }: ProfileScann
   const [statusMessage, setStatusMessage] = useState('Processing profile...');
   const [analysis, setAnalysis] = useState<ProfileAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isApiScan, setIsApiScan] = useState(false);
   
   // Force re-render when status changes
   useEffect(() => {
@@ -91,19 +90,16 @@ export default function ProfileScanner({ wsRef, visible, onClose }: ProfileScann
               setStatusMessage(msg.message || 'Analyzing LinkedIn Profile via API...');
               setError(null);
               setAnalysis(null);
-              setIsApiScan(true);
               break;
               
             case 'apiScanComplete':
               setAnalysis(msg.linkedInData);
               setScanStatus('complete');
-              setIsApiScan(false);
               break;
               
             case 'apiScanError':
               setError(msg.error);
               setScanStatus('idle');
-              setIsApiScan(false);
               break;
           }
         }
