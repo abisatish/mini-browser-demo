@@ -133,8 +133,8 @@ export default function ProfileScanner({ wsRef, visible, onClose }: ProfileScann
     return () => clearTimeout(timeout);
   }, [scanStatus, visible]);
   
-  // Show if either manually visible or during API scan
-  if (!visible && !isApiScan) return null;
+  // Show if visible
+  if (!visible) return null;
   
   return (
     <div className="profile-scanner-overlay">
@@ -192,9 +192,9 @@ export default function ProfileScanner({ wsRef, visible, onClose }: ProfileScann
         </div>
       </div>
       
-      {/* Face ID Scanner Overlay - Always show for API scans */}
+      {/* Face ID Scanner Overlay */}
       <ScanningIndicator 
-        isScanning={(scanStatus !== 'idle' && scanStatus !== 'complete' && !error) || isApiScan}
+        isScanning={scanStatus !== 'idle' && scanStatus !== 'complete' && !error}
         message={statusMessage || 'Initializing scan...'}
       />
     </div>
