@@ -274,21 +274,48 @@ RETURN THE JSON NOW.`
       max_tokens: 1000
     });
 
+    const content = response.choices[0].message.content;
+    console.log('🔵 API: GPT Response:', content); // Debug log
+    
+    // Save screenshot for debugging ANY problematic response
+    const fs = require('fs').promises;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    
+    // Check for refusal responses
+    const refusalPhrases = [
+      "i can't assist",
+      "i cannot assist", 
+      "sorry",
+      "unable to analyze",
+      "cannot help",
+      "can't help"
+    ];
+    
+    const isRefusal = refusalPhrases.some(phrase => 
+      content.toLowerCase().includes(phrase)
+    );
+    
+    // Save screenshot if GPT refused OR if we're about to have a parsing error
+    if (isRefusal || !content.includes('{')) {
+      const errorType = isRefusal ? 'refusal' : 'invalid';
+      const errorPath = `/tmp/linkedin-${errorType}-${timestamp}.jpg`;
+      await fs.writeFile(errorPath, screenshot);
+      console.error(`🔵 API: ${errorType} response - screenshot saved to: ${errorPath}`);
+    }
+    
     try {
-      const content = response.choices[0].message.content;
-      console.log('🔵 API: GPT Response:', content); // Debug log
       const jsonMatch = content.match(/```json\n?([\s\S]*?)\n?```/) || [null, content];
       const jsonString = jsonMatch[1] || content;
       return JSON.parse(jsonString.trim());
     } catch (e) {
-      // Save screenshot on error for debugging
-      const fs = require('fs').promises;
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const errorPath = `/tmp/linkedin-error-${timestamp}.jpg`;
-      await fs.writeFile(errorPath, screenshot);
-      console.error('🔵 API: Failed to parse GPT response:', response.choices[0].message.content);
-      console.error(`🔵 API: Error screenshot saved to: ${errorPath}`);
-      throw new Error('Failed to parse LinkedIn data from screenshot - GPT might not have seen enough content');
+      // Also save on parse error if not already saved
+      if (!isRefusal) {
+        const errorPath = `/tmp/linkedin-parse-error-${timestamp}.jpg`;
+        await fs.writeFile(errorPath, screenshot);
+        console.error(`🔵 API: Parse error - screenshot saved to: ${errorPath}`);
+      }
+      console.error('🔵 API: Failed to parse GPT response:', content);
+      throw new Error('Failed to parse LinkedIn data from screenshot');
     }
   }
 
