@@ -465,7 +465,8 @@ const __dirname = path.dirname(__filename);
       
       if (linkedInUrl) {
         // Navigate to LinkedIn URL using the existing browser session
-        console.log('📍 Navigating to LinkedIn URL using existing browser:', linkedInUrl);
+        console.log('🔵 API CALL: /contextualized endpoint');
+        console.log('📍 API: Navigating to LinkedIn URL using existing browser:', linkedInUrl);
         
         // Navigate to the URL
         await page.goto(linkedInUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -473,17 +474,17 @@ const __dirname = path.dirname(__filename);
         // Wait for network idle
         try {
           await page.waitForLoadState('networkidle', { timeout: 5000 });
-          console.log('Page reached network idle state');
+          console.log('🔵 API: Page reached network idle state');
         } catch (e) {
-          console.log('Timeout waiting for network idle, continuing anyway');
+          console.log('🔵 API: Timeout waiting for network idle, continuing anyway');
         }
         
         // Wait for LinkedIn profile elements
         try {
           await page.waitForSelector('section.artdeco-card', { timeout: 5000 });
-          console.log('LinkedIn profile sections loaded');
+          console.log('🔵 API: LinkedIn profile sections loaded');
         } catch (e) {
-          console.log('Could not find profile sections, continuing anyway');
+          console.log('🔵 API: Could not find profile sections, continuing anyway');
         }
         
         // Monitor content changes and wait for stability (same logic as fetchLinkedInData)
@@ -503,7 +504,7 @@ const __dirname = path.dirname(__filename);
           });
           
           if (currentContent.textLength !== previousTextLength) {
-            console.log(`Content changing: ${previousTextLength} → ${currentContent.textLength} chars`);
+            console.log(`🔵 API: Content changing: ${previousTextLength} → ${currentContent.textLength} chars`);
             previousTextLength = currentContent.textLength;
             stableCount = 0;
           } else {
@@ -521,8 +522,8 @@ const __dirname = path.dirname(__filename);
               
               if (profileComplete.spinners === 0) {
                 contentStabilized = true;
-                console.log('✅ Content stabilized! Profile fully loaded');
-                console.log(`📏 Final content length: ${currentContent.textLength} chars`);
+                console.log('🔵 API: ✅ Content stabilized! Profile fully loaded');
+                console.log(`🔵 API: 📏 Final content length: ${currentContent.textLength} chars`);
                 console.log(`🖼️  Images: ${currentContent.hasImages}`);
                 console.log(`📑 Sections: ${currentContent.profileSections}`);
               }
@@ -534,21 +535,21 @@ const __dirname = path.dirname(__filename);
         }
         
         if (!contentStabilized) {
-          console.log('⚠️  Content monitoring timeout - proceeding with capture');
+          console.log('🔵 API: ⚠️  Content monitoring timeout - proceeding with capture');
         }
         
         // Critical delay after stabilization - ensures content is fully rendered
-        console.log('Waiting 1.5 seconds for final render...');
+        console.log('🔵 API: Waiting 1.5 seconds for final render...');
         await new Promise(resolve => setTimeout(resolve, 1500));
         
         // Take screenshot for GPT analysis
-        console.log('Capturing full page screenshot...');
+        console.log('🔵 API: Capturing full page screenshot...');
         const screenshot = await page.screenshot({ 
           type: 'jpeg', 
           quality: 80,
           fullPage: true
         });
-        console.log('Screenshot captured, size:', screenshot.length, 'bytes');
+        console.log('🔵 API: Screenshot captured, size:', screenshot.length, 'bytes');
         
         // Extract LinkedIn data from screenshot
         linkedInData = await extractLinkedInDataFromScreenshot(screenshot);
@@ -746,7 +747,8 @@ const __dirname = path.dirname(__filename);
                         
                         // Auto-trigger profile scan if we're on a LinkedIn profile page
                         const currentUrl = page.url();
-                        if (currentUrl.includes('linkedin.com/in/') && currentContent.textLength > 8000) {
+                        // TEMPORARILY DISABLED AUTO-SCAN FOR API TESTING
+                        if (false && currentUrl.includes('linkedin.com/in/') && currentContent.textLength > 8000) {
                           console.log('🤖 AUTO-TRIGGERING PROFILE SCAN...');
                           console.log(`📊 Scanning profile: ${profileComplete.profileName}`);
                           console.log(`🔗 URL: ${currentUrl}`);
