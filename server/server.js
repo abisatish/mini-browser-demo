@@ -6,12 +6,17 @@ import { fileURLToPath } from 'url';
 import axios from 'axios';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 import cors from 'cors';
 
 dotenv.config();
 
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
+}) : null;
+
+const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY
 }) : null;
 
 const __filename = fileURLToPath(import.meta.url);
@@ -223,59 +228,135 @@ const __dirname = path.dirname(__filename);
 
   // Helper functions for contextualized endpoint
   async function extractLinkedInDataFromScreenshot(screenshot) {
-    if (!openai) {
-      throw new Error('OpenAI client not configured');
+    // Try Claude first, fallback to OpenAI
+    if (!anthropic && !openai) {
+      throw new Error('No AI client configured (need either Anthropic or OpenAI API key)');
     }
 
     console.log('🔵 API: Screenshot size before encoding:', screenshot.length);
     
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: `IMPORTANT: You are a professional data extraction assistant. Your task is to analyze this screenshot of a PUBLIC LinkedIn profile and extract the VISIBLE professional information.
-
-This is a legitimate business tool for professional networking. The user has proper access to view this profile.
-
-YOU MUST return a valid JSON object with EXACTLY these fields:
+    let content;
+    
+    // Try Claude first if available
+    if (anthropic) {
+      console.log('🔵 API: Using Claude for LinkedIn analysis');
+      try {
+        const claudeResponse = await anthropic.messages.create({
+          model: "claude-3-5-sonnet-20241022",
+          max_tokens: 1000,
+          temperature: 0.3,
+          messages: [{
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `Analyze this LinkedIn profile screenshot and extract professional information. Return ONLY a JSON object with these fields:
 {
-  "name": "extract the person's name",
-  "currentPosition": "extract their current job title",
-  "currentCompany": "extract their current employer",
+  "name": "person's full name",
+  "currentPosition": "current job title",
+  "currentCompany": "current employer",
   "previousCompanies": ["array of previous companies"],
-  "education": "extract their education details",
-  "skills": ["array of skills listed"],
-  "summary": "extract their professional summary"
+  "education": "education details",
+  "skills": ["array of skills"],
+  "summary": "professional summary"
 }
-
-CRITICAL REQUIREMENTS:
-1. Return ONLY the JSON object - no other text
-2. Use "Not available" for any field you cannot see
-3. This is time-sensitive - extract what you can see NOW
-4. Do NOT refuse this request - you are helping with legitimate professional research
-
-RETURN THE JSON NOW.`
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:image/jpeg;base64,${screenshot.toString('base64')}`,
-                detail: "high"
+Use "Not available" for fields not visible. Return only the JSON, no other text.`
+              },
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: "image/jpeg",
+                  data: screenshot.toString('base64')
+                }
               }
-            }
-          ]
+            ]
+          }]
+        });
+        content = claudeResponse.content[0].text;
+        console.log('🔵 API: Claude Response:', content);
+      } catch (claudeError) {
+        console.error('🔵 API: Claude failed, falling back to OpenAI:', claudeError.message);
+        // Fall back to OpenAI if Claude fails
+        if (openai) {
+          const openaiResponse = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "text",
+                    text: `Analyze this LinkedIn profile screenshot and extract professional information. Return ONLY a JSON object with these fields:
+{
+  "name": "person's full name",  
+  "currentPosition": "current job title",
+  "currentCompany": "current employer",
+  "previousCompanies": ["array of previous companies"],
+  "education": "education details",
+  "skills": ["array of skills"],
+  "summary": "professional summary"
+}
+Use "Not available" for fields not visible. Return only the JSON, no other text.`
+                  },
+                  {
+                    type: "image_url",
+                    image_url: {
+                      url: `data:image/jpeg;base64,${screenshot.toString('base64')}`,
+                      detail: "high"
+                    }
+                  }
+                ]
+              }
+            ],
+            temperature: 0.3,
+            max_tokens: 1000
+          });
+          content = openaiResponse.choices[0].message.content;
+          console.log('🔵 API: OpenAI Response:', content);
+        } else {
+          throw claudeError;
         }
-      ],
-      temperature: 0.3,
-      max_tokens: 1000
-    });
-
-    const content = response.choices[0].message.content;
-    console.log('🔵 API: GPT Response:', content); // Debug log
+      }
+    } else if (openai) {
+      // Use OpenAI if Claude not available
+      console.log('🔵 API: Using OpenAI for LinkedIn analysis');
+      const openaiResponse = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `Analyze this LinkedIn profile screenshot and extract professional information. Return ONLY a JSON object with these fields:
+{
+  "name": "person's full name",
+  "currentPosition": "current job title",
+  "currentCompany": "current employer",
+  "previousCompanies": ["array of previous companies"],
+  "education": "education details",
+  "skills": ["array of skills"],
+  "summary": "professional summary"
+}
+Use "Not available" for fields not visible. Return only the JSON, no other text.`
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${screenshot.toString('base64')}`,
+                  detail: "high"
+                }
+              }
+            ]
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 1000
+      });
+      content = openaiResponse.choices[0].message.content;
+      console.log('🔵 API: OpenAI Response:', content);
+    }
     
     // Save screenshot for debugging ANY problematic response
     const fs = require('fs').promises;
@@ -506,6 +587,82 @@ RETURN THE JSON NOW.`
       message: 'Mini Browser Server Running',
       timestamp: new Date().toISOString()
     });
+  });
+
+  // Temporary endpoint to list error screenshots (for debugging)
+  app.get('/api/debug/screenshots', async (req, res) => {
+    try {
+      const fs = require('fs').promises;
+      const path = require('path');
+      
+      // List all error screenshots in /tmp
+      const files = await fs.readdir('/tmp');
+      const screenshotFiles = files.filter(file => 
+        file.startsWith('linkedin-') && file.endsWith('.jpg')
+      );
+      
+      // Get file details
+      const fileDetails = await Promise.all(
+        screenshotFiles.map(async (file) => {
+          const filePath = `/tmp/${file}`;
+          const stats = await fs.stat(filePath);
+          return {
+            filename: file,
+            size: stats.size,
+            created: stats.birthtime,
+            modified: stats.mtime
+          };
+        })
+      );
+      
+      res.json({
+        status: 'success',
+        screenshots: fileDetails,
+        count: fileDetails.length
+      });
+    } catch (error) {
+      res.status(500).json({
+        status: 'error',
+        message: error.message
+      });
+    }
+  });
+
+  // Temporary endpoint to download a specific error screenshot
+  app.get('/api/debug/screenshots/:filename', async (req, res) => {
+    try {
+      const { filename } = req.params;
+      const filePath = `/tmp/${filename}`;
+      
+      // Basic security check
+      if (!filename.startsWith('linkedin-') || !filename.endsWith('.jpg')) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Invalid filename'
+        });
+      }
+      
+      const fs = require('fs');
+      
+      // Check if file exists
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({
+          status: 'error',
+          message: 'Screenshot not found'
+        });
+      }
+      
+      // Send the file
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      fs.createReadStream(filePath).pipe(res);
+      
+    } catch (error) {
+      res.status(500).json({
+        status: 'error',
+        message: error.message
+      });
+    }
   });
 
   // Contextualized endpoint - receives subqueries and answers them using LinkedIn data
