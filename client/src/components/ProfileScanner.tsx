@@ -18,8 +18,8 @@ interface ProfileScannerProps {
 }
 
 export default function ProfileScanner({ wsRef, visible, onClose }: ProfileScannerProps) {
-  const [scanStatus, setScanStatus] = useState<'idle' | 'scanning' | 'capturing' | 'analyzing' | 'complete'>('idle');
-  const [statusMessage, setStatusMessage] = useState('');
+  const [scanStatus, setScanStatus] = useState<'idle' | 'scanning' | 'capturing' | 'analyzing' | 'complete'>('scanning');
+  const [statusMessage, setStatusMessage] = useState('Processing profile...');
   const [analysis, setAnalysis] = useState<ProfileAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
   
@@ -37,11 +37,9 @@ export default function ProfileScanner({ wsRef, visible, onClose }: ProfileScann
       return;
     }
     
-    // Start scan when component becomes visible
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ cmd: 'scanProfile' }));
-      setScanStatus('scanning');
-    }
+    // Don't start a new scan - just wait for incoming analysis
+    // The scan is already triggered by the server
+    console.log('ProfileScanner visible, waiting for analysis...');
   }, [visible, wsRef]);
   
   // Listen for scan updates
