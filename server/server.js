@@ -215,8 +215,228 @@ const __dirname = path.dirname(__filename);
   const app = express();
   const wss = new WebSocketServer({ noServer: true });
 
-  // Serve static files from the built client
+  // Middleware
+  app.use(express.json());
   app.use(express.static(path.join(__dirname, '../client/dist')));
+
+  // Helper functions for contextualized endpoint
+  async function extractLinkedInDataFromScreenshot(screenshot) {
+    if (!openai) {
+      throw new Error('OpenAI client not configured');
+    }
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `Extract professional information from this LinkedIn profile screenshot. Return as JSON with fields: name, currentPosition, currentCompany, previousCompanies, education, skills, summary.`
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:image/jpeg;base64,${screenshot.toString('base64')}`,
+                detail: "high"
+              }
+            }
+          ]
+        }
+      ],
+      temperature: 0.3
+    });
+
+    try {
+      const content = response.choices[0].message.content;
+      const jsonMatch = content.match(/```json\n?([\s\S]*?)\n?```/) || [null, content];
+      const jsonString = jsonMatch[1] || content;
+      return JSON.parse(jsonString.trim());
+    } catch (e) {
+      throw new Error('Failed to parse LinkedIn data from screenshot');
+    }
+  }
+
+  async function fetchLinkedInData(linkedInUrl, browserPage) {
+    console.log('Navigating to LinkedIn URL:', linkedInUrl);
+    
+    // Navigate to LinkedIn URL
+    await browserPage.goto(linkedInUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    
+    // Wait for network idle
+    try {
+      await browserPage.waitForLoadState('networkidle', { timeout: 5000 });
+      console.log('Page reached network idle state');
+    } catch (e) {
+      console.log('Timeout waiting for network idle, continuing anyway');
+    }
+    
+    // Wait for LinkedIn profile elements
+    try {
+      await browserPage.waitForSelector('section.artdeco-card', { timeout: 5000 });
+      console.log('LinkedIn profile sections loaded');
+    } catch (e) {
+      console.log('Could not find profile sections, continuing anyway');
+    }
+    
+    // Monitor content changes and wait for stability
+    let previousTextLength = 0;
+    let stableCount = 0;
+    let contentStabilized = false;
+    const maxChecks = 20; // Check for up to 20 seconds
+    
+    for (let checkCount = 0; checkCount < maxChecks && !contentStabilized; checkCount++) {
+      const currentContent = await browserPage.evaluate(() => {
+        const body = document.body;
+        return {
+          textLength: body ? body.innerText.trim().length : 0,
+          hasImages: document.querySelectorAll('img').length,
+          profileSections: document.querySelectorAll('.profile-section, .pv-profile-section, section').length
+        };
+      });
+      
+      if (currentContent.textLength !== previousTextLength) {
+        console.log(`Content changing: ${previousTextLength} → ${currentContent.textLength} chars`);
+        previousTextLength = currentContent.textLength;
+        stableCount = 0;
+      } else {
+        stableCount++;
+        
+        // Wait for 3 seconds of stability and significant content
+        if (stableCount === 3 && currentContent.textLength > 5000) {
+          // Check for LinkedIn-specific completion indicators
+          const profileComplete = await browserPage.evaluate(() => {
+            const spinners = document.querySelectorAll('.spinner, .loading, [data-loading="true"], .artdeco-spinner').length;
+            const hasExperience = document.querySelector('.experience-section, [data-section="experience"], #experience, .pv-profile-section__card-item-v2') !== null;
+            const hasAbout = document.querySelector('.about-section, [data-section="summary"], #about, .pv-about-section') !== null;
+            return { spinners, hasExperience, hasAbout };
+          });
+          
+          if (profileComplete.spinners === 0) {
+            contentStabilized = true;
+            console.log('✅ Content stabilized! Profile fully loaded');
+            console.log(`📏 Final content length: ${currentContent.textLength} chars`);
+            console.log(`🖼️  Images: ${currentContent.hasImages}`);
+            console.log(`📑 Sections: ${currentContent.profileSections}`);
+          }
+        }
+      }
+      
+      // Wait 1 second before next check
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    
+    if (!contentStabilized) {
+      console.log('⚠️  Content monitoring timeout - proceeding with capture');
+    }
+    
+    // Critical delay after stabilization - ensures content is fully rendered
+    console.log('Waiting 1.5 seconds for final render...');
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    // Take screenshot for GPT analysis
+    console.log('Capturing full page screenshot...');
+    const screenshot = await browserPage.screenshot({ 
+      type: 'jpeg', 
+      quality: 80,
+      fullPage: true
+    });
+    console.log('Screenshot captured, size:', screenshot.length, 'bytes');
+
+    // Analyze with GPT-4 Vision
+    if (!openai) {
+      throw new Error('OpenAI client not configured');
+    }
+
+    console.log('Analyzing with GPT-4 Vision...');
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `Extract professional information from this LinkedIn profile. Return as JSON with fields: name, currentPosition, currentCompany, previousCompanies, education, skills, summary.`
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:image/jpeg;base64,${screenshot.toString('base64')}`,
+                detail: "high"
+              }
+            }
+          ]
+        }
+      ],
+      temperature: 0.3
+    });
+
+    try {
+      const content = response.choices[0].message.content;
+      const jsonMatch = content.match(/```json\n?([\s\S]*?)\n?```/) || [null, content];
+      const jsonString = jsonMatch[1] || content;
+      const parsed = JSON.parse(jsonString.trim());
+      console.log('✅ Successfully extracted LinkedIn data');
+      return parsed;
+    } catch (e) {
+      console.error('Failed to parse LinkedIn data:', e);
+      throw new Error('Failed to parse LinkedIn data');
+    }
+  }
+
+  async function generateContextualizedAnswers(subqueries, linkedInData) {
+    if (!openai) {
+      throw new Error('OpenAI client not configured');
+    }
+
+    const prompt = `
+      You are a helpful assistant answering questions about a professional based on their LinkedIn profile.
+      
+      LinkedIn Profile Data:
+      ${JSON.stringify(linkedInData, null, 2)}
+      
+      Please answer the following questions based on the LinkedIn data above:
+      ${subqueries.map((q, i) => `${i + 1}. ${q}`).join('\n')}
+      
+      Provide clear, concise answers using only the information available in the LinkedIn profile.
+      If information is not available, say so clearly.
+      Return as JSON array where each element has 'query' and 'answer' fields.
+    `;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      temperature: 0.3
+    });
+
+    try {
+      const content = response.choices[0].message.content;
+      const jsonMatch = content.match(/```json\n?([\s\S]*?)\n?```/) || [null, content];
+      const jsonString = jsonMatch[1] || content;
+      const answers = JSON.parse(jsonString.trim());
+      
+      // Return answers in the expected format
+      return answers.map((item, i) => ({
+        query: subqueries[i] || item.query,
+        answer: item.answer
+      }));
+    } catch (e) {
+      console.error('Error parsing GPT response:', e);
+      // Fallback - return error for each query
+      return subqueries.map(query => ({
+        query: query,
+        answer: 'Error generating answer for this query'
+      }));
+    }
+  }
+
 
   // Health check endpoint
   app.get('/api/health', (req, res) => {
@@ -225,6 +445,154 @@ const __dirname = path.dirname(__filename);
       message: 'Mini Browser Server Running',
       timestamp: new Date().toISOString()
     });
+  });
+
+  // Contextualized endpoint - receives subqueries and answers them using LinkedIn data
+  app.post('/api/contextualized', async (req, res) => {
+    const { subqueries, linkedInUrl } = req.body;
+
+    try {
+      // Validate inputs
+      if (!subqueries || !Array.isArray(subqueries) || subqueries.length === 0) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Missing or invalid subqueries array'
+        });
+      }
+
+      // Get LinkedIn data from current page or navigate if URL provided
+      let linkedInData;
+      
+      if (linkedInUrl) {
+        // Navigate to LinkedIn URL using the existing browser session
+        console.log('📍 Navigating to LinkedIn URL using existing browser:', linkedInUrl);
+        
+        // Navigate to the URL
+        await page.goto(linkedInUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        
+        // Wait for network idle
+        try {
+          await page.waitForLoadState('networkidle', { timeout: 5000 });
+          console.log('Page reached network idle state');
+        } catch (e) {
+          console.log('Timeout waiting for network idle, continuing anyway');
+        }
+        
+        // Wait for LinkedIn profile elements
+        try {
+          await page.waitForSelector('section.artdeco-card', { timeout: 5000 });
+          console.log('LinkedIn profile sections loaded');
+        } catch (e) {
+          console.log('Could not find profile sections, continuing anyway');
+        }
+        
+        // Monitor content changes and wait for stability (same logic as fetchLinkedInData)
+        let previousTextLength = 0;
+        let stableCount = 0;
+        let contentStabilized = false;
+        const maxChecks = 20; // Check for up to 20 seconds
+        
+        for (let checkCount = 0; checkCount < maxChecks && !contentStabilized; checkCount++) {
+          const currentContent = await page.evaluate(() => {
+            const body = document.body;
+            return {
+              textLength: body ? body.innerText.trim().length : 0,
+              hasImages: document.querySelectorAll('img').length,
+              profileSections: document.querySelectorAll('.profile-section, .pv-profile-section, section').length
+            };
+          });
+          
+          if (currentContent.textLength !== previousTextLength) {
+            console.log(`Content changing: ${previousTextLength} → ${currentContent.textLength} chars`);
+            previousTextLength = currentContent.textLength;
+            stableCount = 0;
+          } else {
+            stableCount++;
+            
+            // Wait for 3 seconds of stability and significant content
+            if (stableCount === 3 && currentContent.textLength > 5000) {
+              // Check for LinkedIn-specific completion indicators
+              const profileComplete = await page.evaluate(() => {
+                const spinners = document.querySelectorAll('.spinner, .loading, [data-loading="true"], .artdeco-spinner').length;
+                const hasExperience = document.querySelector('.experience-section, [data-section="experience"], #experience, .pv-profile-section__card-item-v2') !== null;
+                const hasAbout = document.querySelector('.about-section, [data-section="summary"], #about, .pv-about-section') !== null;
+                return { spinners, hasExperience, hasAbout };
+              });
+              
+              if (profileComplete.spinners === 0) {
+                contentStabilized = true;
+                console.log('✅ Content stabilized! Profile fully loaded');
+                console.log(`📏 Final content length: ${currentContent.textLength} chars`);
+                console.log(`🖼️  Images: ${currentContent.hasImages}`);
+                console.log(`📑 Sections: ${currentContent.profileSections}`);
+              }
+            }
+          }
+          
+          // Wait 1 second before next check
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        
+        if (!contentStabilized) {
+          console.log('⚠️  Content monitoring timeout - proceeding with capture');
+        }
+        
+        // Critical delay after stabilization - ensures content is fully rendered
+        console.log('Waiting 1.5 seconds for final render...');
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        // Take screenshot for GPT analysis
+        console.log('Capturing full page screenshot...');
+        const screenshot = await page.screenshot({ 
+          type: 'jpeg', 
+          quality: 80,
+          fullPage: true
+        });
+        console.log('Screenshot captured, size:', screenshot.length, 'bytes');
+        
+        // Extract LinkedIn data from screenshot
+        linkedInData = await extractLinkedInDataFromScreenshot(screenshot);
+      } else {
+        // Use current page if already on LinkedIn
+        const currentUrl = page.url();
+        if (currentUrl.includes('linkedin.com/in/')) {
+          // Take screenshot of current page
+          const screenshot = await page.screenshot({ 
+            type: 'jpeg', 
+            quality: 80,
+            fullPage: true
+          });
+          
+          // Extract data from current page
+          linkedInData = await extractLinkedInDataFromScreenshot(screenshot);
+        } else {
+          return res.status(400).json({
+            status: 'error',
+            message: 'Not on a LinkedIn profile page and no linkedInUrl provided'
+          });
+        }
+      }
+      
+      // Generate contextualized answers using LinkedIn data
+      const answeredQueries = await generateContextualizedAnswers(
+        subqueries,
+        linkedInData
+      );
+
+      res.json({
+        status: 'success',
+        answers: answeredQueries,
+        linkedInData: linkedInData,
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('Error in contextualized endpoint:', error);
+      res.status(500).json({
+        status: 'error',
+        message: error.message
+      });
+    }
   });
 
   // Serve the React app for all other routes
@@ -903,7 +1271,7 @@ If any field is not visible in the screenshot, use "Not available" for that fiel
               for (let i = 1; i <= scanSteps; i++) {
                 const scrollTo = (pageHeight / scanSteps) * i;
                 await page.evaluate((y) => window.scrollTo({ top: y, behavior: 'auto' }), scrollTo);
-                await page.waitForTimeout(50); // Very quick pauses for visual effect
+                await page.waitForTimeout(100); // Increased delay for better visual effect
                 await sendScreenshot(); // Show the scrolling to user
               }
               
@@ -911,7 +1279,7 @@ If any field is not visible in the screenshot, use "Not available" for that fiel
               for (let i = scanSteps - 1; i >= 0; i--) {
                 const scrollTo = (pageHeight / scanSteps) * i;
                 await page.evaluate((y) => window.scrollTo({ top: y, behavior: 'auto' }), scrollTo);
-                await page.waitForTimeout(30);
+                await page.waitForTimeout(80); // Increased delay
                 await sendScreenshot();
               }
               
@@ -921,7 +1289,7 @@ If any field is not visible in the screenshot, use "Not available" for that fiel
               // Now take the full page screenshot
               ws.send(JSON.stringify({ type: 'scanStatus', status: 'capturing', message: 'Capturing profile data...' }));
               await sendScreenshot(); // Send one more frame to show we're at capturing stage
-              await new Promise(resolve => setTimeout(resolve, 100)); // Small delay to ensure message is sent
+              await new Promise(resolve => setTimeout(resolve, 500)); // Delay to show capturing status
               
               const fullPageScreenshot = await page.screenshot({ 
                 type: 'jpeg', 
@@ -934,7 +1302,7 @@ If any field is not visible in the screenshot, use "Not available" for that fiel
               // Update status to analyzing
               ws.send(JSON.stringify({ type: 'scanStatus', status: 'analyzing', message: 'Processing with AI...' }));
               await sendScreenshot(); // Update UI
-              await new Promise(resolve => setTimeout(resolve, 100)); // Ensure status update is sent
+              await new Promise(resolve => setTimeout(resolve, 500)); // Show analyzing status
               
               // Analyze with GPT-4 Vision if API key exists
               if (openai && process.env.OPENAI_API_KEY) {

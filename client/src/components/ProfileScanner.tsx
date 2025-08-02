@@ -37,9 +37,18 @@ export default function ProfileScanner({ wsRef, visible, onClose }: ProfileScann
       return;
     }
     
-    // Don't start a new scan - just wait for incoming analysis
-    // The scan is already triggered by the server
-    console.log('ProfileScanner visible, waiting for analysis...');
+    // Check if we're already processing (auto-triggered)
+    if (scanStatus !== 'idle' && scanStatus !== 'complete') {
+      console.log('ProfileScanner visible, scan already in progress...');
+      return;
+    }
+    
+    // If idle, start a manual scan
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      console.log('ProfileScanner visible, starting manual scan...');
+      wsRef.current.send(JSON.stringify({ cmd: 'scanProfile' }));
+      setScanStatus('scanning');
+    }
   }, [visible, wsRef]);
   
   // Listen for scan updates
