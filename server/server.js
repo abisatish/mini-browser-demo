@@ -440,11 +440,26 @@ If any field is not visible in the screenshot, use "Not available" for that fiel
                                 const analysisResult = response.choices[0].message.content;
                                 console.log('GPT Analysis:', analysisResult);
                                 
-                                // Send the analysis result to the client
-                                ws.send(JSON.stringify({
-                                  type: 'profileAnalysis',
-                                  data: analysisResult
-                                }));
+                                // Parse the JSON from the GPT response
+                                try {
+                                  // Extract JSON from the response (it might be wrapped in ```json``` blocks)
+                                  const jsonMatch = analysisResult.match(/```json\n?([\s\S]*?)\n?```/) || [null, analysisResult];
+                                  const jsonString = jsonMatch[1] || analysisResult;
+                                  const parsedAnalysis = JSON.parse(jsonString.trim());
+                                  
+                                  // Send the parsed analysis to the client
+                                  ws.send(JSON.stringify({
+                                    type: 'profileAnalysis',
+                                    analysis: parsedAnalysis
+                                  }));
+                                  console.log('✅ Profile analysis sent to UI');
+                                } catch (parseError) {
+                                  console.error('Failed to parse GPT response:', parseError);
+                                  ws.send(JSON.stringify({
+                                    type: 'scanError',
+                                    error: 'Failed to parse analysis results'
+                                  }));
+                                }
                               } else {
                                 console.log('OpenAI client not configured, sending screenshot only');
                                 ws.send(JSON.stringify({

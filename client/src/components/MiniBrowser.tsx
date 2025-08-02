@@ -136,6 +136,10 @@ export default function MiniBrowser() {
           const msg = JSON.parse(e.data);
           if (msg.type === 'url') {
             setUrl(msg.url);
+          } else if (msg.type === 'profileAnalysis') {
+            // Auto-open ProfileScanner when analysis is received
+            console.log('Received profile analysis, opening scanner UI');
+            setShowProfileScanner(true);
           } else if (msg.type === 'searchResults') {
             // Handle search results from server
             setSearchResults(msg.results);
