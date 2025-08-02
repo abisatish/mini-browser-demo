@@ -240,7 +240,14 @@ const __dirname = path.dirname(__filename);
     // Try Claude first if available
     if (anthropic) {
       console.log('🔵 API: Using Claude for LinkedIn analysis');
+      console.log('🔵 API: Anthropic client exists:', !!anthropic);
+      console.log('🔵 API: Anthropic API key exists:', !!process.env.ANTHROPIC_API_KEY);
+      console.log('🔵 API: Screenshot size:', screenshot.length, 'bytes');
+      
       try {
+        console.log('🔵 API: Preparing Claude request...');
+        const startTime = Date.now();
+        
         const claudeResponse = await anthropic.messages.create({
           model: "claude-3-5-sonnet-20241022",
           max_tokens: 1000,
@@ -253,7 +260,7 @@ const __dirname = path.dirname(__filename);
                 text: `Analyze this LinkedIn profile screenshot and extract professional information. Return ONLY a JSON object with these fields:
 {
   "name": "person's full name",
-  "currentPosition": "current job title",
+  "currentPosition": "current job title",  
   "currentCompany": "current employer",
   "previousCompanies": ["array of previous companies"],
   "education": "education details",
@@ -273,9 +280,31 @@ Use "Not available" for fields not visible. Return only the JSON, no other text.
             ]
           }]
         });
+        
+        const endTime = Date.now();
+        console.log('🔵 API: Claude API call completed in:', endTime - startTime, 'ms');
+        console.log('🔵 API: Claude response object:', JSON.stringify({
+          id: claudeResponse.id,
+          type: claudeResponse.type,
+          role: claudeResponse.role,
+          model: claudeResponse.model,
+          stop_reason: claudeResponse.stop_reason,
+          usage: claudeResponse.usage,
+          content_length: claudeResponse.content?.length
+        }, null, 2));
+        
         content = claudeResponse.content[0].text;
-        console.log('🔵 API: Claude Response:', content);
+        console.log('🔵 API: Claude extracted text:', content);
+        console.log('🔵 API: Content length:', content.length, 'characters');
+        
       } catch (claudeError) {
+        console.error('🔵 API: Claude error occurred');
+        console.error('🔵 API: Error name:', claudeError.name);
+        console.error('🔵 API: Error message:', claudeError.message);
+        console.error('🔵 API: Error stack:', claudeError.stack);
+        if (claudeError.response) {
+          console.error('🔵 API: Error response:', claudeError.response);
+        }
         console.error('🔵 API: Claude failed, falling back to OpenAI:', claudeError.message);
         // Fall back to OpenAI if Claude fails
         if (openai) {
@@ -529,9 +558,12 @@ Use "Not available" for fields not visible. Return only the JSON, no other text.
   }
 
   async function generateContextualizedAnswers(subqueries, linkedInData) {
-    if (!openai) {
-      throw new Error('OpenAI client not configured');
+    if (!anthropic && !openai) {
+      throw new Error('No AI client configured (need either Anthropic or OpenAI API key)');
     }
+    
+    console.log('🔵 API: Generating contextualized answers for queries:', subqueries);
+    console.log('🔵 API: LinkedIn data available:', !!linkedInData);
 
     const prompt = `
       You are a helpful assistant answering questions about a professional based on their LinkedIn profile.
@@ -546,23 +578,67 @@ Use "Not available" for fields not visible. Return only the JSON, no other text.
       If information is not available, say so clearly.
       Return as JSON array where each element has 'query' and 'answer' fields.
     `;
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
+    
+    let content;
+    
+    // Try Claude first if available
+    if (anthropic) {
+      console.log('🔵 API: Using Claude for answering subqueries');
+      try {
+        const startTime = Date.now();
+        const claudeResponse = await anthropic.messages.create({
+          model: "claude-3-5-sonnet-20241022",
+          max_tokens: 1000,
+          temperature: 0.3,
+          messages: [{
+            role: "user",
+            content: prompt
+          }]
+        });
+        const endTime = Date.now();
+        console.log('🔵 API: Claude subquery response time:', endTime - startTime, 'ms');
+        content = claudeResponse.content[0].text;
+        console.log('🔵 API: Claude subquery response:', content);
+      } catch (claudeError) {
+        console.error('🔵 API: Claude subquery error:', claudeError.message);
+        // Fall back to OpenAI
+        if (openai) {
+          console.log('🔵 API: Falling back to OpenAI for subqueries');
+          const openaiResponse = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [{
+              role: "user",
+              content: prompt
+            }],
+            temperature: 0.3
+          });
+          content = openaiResponse.choices[0].message.content;
+          console.log('🔵 API: OpenAI subquery response:', content);
+        } else {
+          throw claudeError;
+        }
+      }
+    } else if (openai) {
+      // Use OpenAI if Claude not available
+      console.log('🔵 API: Using OpenAI for answering subqueries');
+      const openaiResponse = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{
           role: "user",
           content: prompt
-        }
-      ],
-      temperature: 0.3
-    });
+        }],
+        temperature: 0.3
+      });
+      content = openaiResponse.choices[0].message.content;
+      console.log('🔵 API: OpenAI subquery response:', content);
+    }
 
     try {
-      const content = response.choices[0].message.content;
       const jsonMatch = content.match(/```json\n?([\s\S]*?)\n?```/) || [null, content];
       const jsonString = jsonMatch[1] || content;
       const answers = JSON.parse(jsonString.trim());
+      
+      console.log('🔵 API: Parsed answers:', JSON.stringify(answers, null, 2));
       
       // Return answers in the expected format
       return answers.map((item, i) => ({
@@ -570,7 +646,8 @@ Use "Not available" for fields not visible. Return only the JSON, no other text.
         answer: item.answer
       }));
     } catch (e) {
-      console.error('Error parsing GPT response:', e);
+      console.error('🔵 API: Error parsing AI response:', e);
+      console.error('🔵 API: Raw response was:', content);
       // Fallback - return error for each query
       return subqueries.map(query => ({
         query: query,
@@ -686,6 +763,15 @@ Use "Not available" for fields not visible. Return only the JSON, no other text.
         console.log('🔵 API CALL: /contextualized endpoint');
         console.log('📍 API: Navigating to LinkedIn URL using existing browser:', linkedInUrl);
         
+        // Check for LinkedIn cookies
+        const cookies = await context.cookies();
+        console.log('🔵 API: Total cookies:', cookies.length);
+        const linkedInCookies = cookies.filter(c => c.domain.includes('linkedin'));
+        console.log('🔵 API: LinkedIn cookies:', linkedInCookies.length);
+        if (linkedInCookies.length === 0) {
+          console.log('🔵 API: WARNING - No LinkedIn cookies found. You may need to login via the browser UI first.');
+        }
+        
         // Notify all WebSocket clients that API scanning is starting
         const connectedClients = Array.from(wss.clients).filter(client => client.readyState === client.OPEN);
         connectedClients.forEach(client => {
@@ -695,11 +781,24 @@ Use "Not available" for fields not visible. Return only the JSON, no other text.
           }));
         });
         
-        // Navigate to the URL
-        await page.goto(linkedInUrl, { waitUntil: 'networkidle', timeout: 30000 });
+        // Navigate to the URL with more lenient settings
+        console.log('🔵 API: Navigating to LinkedIn URL...');
+        try {
+          await page.goto(linkedInUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          // Wait a bit for dynamic content
+          await page.waitForTimeout(3000);
+        } catch (navError) {
+          console.error('🔵 API: Navigation error:', navError.message);
+          // Try one more time with even more lenient settings
+          await page.goto(linkedInUrl, { waitUntil: 'load', timeout: 30000 });
+          await page.waitForTimeout(2000);
+        }
         
         // EXPERIMENT: Take screenshot after networkidle
         console.log('🔵 API: EXPERIMENT - Taking screenshot after networkidle...');
+        console.log('🔵 API: Current page URL:', page.url());
+        console.log('🔵 API: Page title:', await page.title());
+        
         const screenshot = await page.screenshot({ 
           type: 'jpeg', 
           quality: 80,
@@ -708,7 +807,14 @@ Use "Not available" for fields not visible. Return only the JSON, no other text.
         console.log('🔵 API: Immediate screenshot captured, size:', screenshot.length, 'bytes');
         
         // Extract LinkedIn data from screenshot
-        linkedInData = await extractLinkedInDataFromScreenshot(screenshot);
+        console.log('🔵 API: Starting LinkedIn data extraction...');
+        try {
+          linkedInData = await extractLinkedInDataFromScreenshot(screenshot);
+          console.log('🔵 API: LinkedIn data extraction successful:', JSON.stringify(linkedInData, null, 2));
+        } catch (extractError) {
+          console.error('🔵 API: LinkedIn data extraction failed:', extractError.message);
+          throw extractError;
+        }
       } else {
         // Use current page if already on LinkedIn
         const currentUrl = page.url();
@@ -1481,12 +1587,11 @@ If any field is not visible in the screenshot, use "Not available" for that fiel
               await sendScreenshot(); // Update UI
               await new Promise(resolve => setTimeout(resolve, 500)); // Show analyzing status
               
-              // Analyze with GPT-4 Vision if API key exists
-              if (openai && process.env.OPENAI_API_KEY) {
+              // Analyze with AI - try Claude first, then OpenAI
+              if ((anthropic && process.env.ANTHROPIC_API_KEY) || (openai && process.env.OPENAI_API_KEY)) {
                 try {
+                  console.log('Anthropic client initialized:', !!anthropic);
                   console.log('OpenAI client initialized:', !!openai);
-                  console.log('API Key exists:', !!process.env.OPENAI_API_KEY);
-                  console.log('Sending to GPT-4 Vision for analysis...');
                   
                   // Custom prompt - you can modify this
                   const prompt = m.prompt || `Analyze this LinkedIn profile and extract the following information in JSON format:
@@ -1502,32 +1607,99 @@ If any field is not visible in the screenshot, use "Not available" for that fiel
 
 Be accurate and only include information you can see in the profile.`;
                   
-                  const response = await openai.chat.completions.create({
-                    model: "gpt-4o",
-                    messages: [
-                      {
-                        role: "user",
-                        content: [
-                          {
-                            type: "text",
-                            text: prompt
-                          },
-                          {
-                            type: "image_url",
-                            image_url: {
-                              url: `data:image/jpeg;base64,${fullPageScreenshot.toString('base64')}`,
-                              detail: "high" // Use high detail for better accuracy
-                            }
-                          }
-                        ]
-                      }
-                    ],
-                    max_tokens: 1000,
-                    temperature: 0.3 // Lower temperature for more consistent extraction
-                  });
+                  let analysisText;
                   
-                  const analysisText = response.choices[0].message.content;
-                  console.log('GPT Analysis:', analysisText);
+                  // Try Claude first if available
+                  if (anthropic && process.env.ANTHROPIC_API_KEY) {
+                    console.log('Sending to Claude 3.5 Sonnet for analysis...');
+                    try {
+                      const claudeResponse = await anthropic.messages.create({
+                        model: "claude-3-5-sonnet-20241022",
+                        max_tokens: 1000,
+                        temperature: 0.3,
+                        messages: [{
+                          role: "user",
+                          content: [
+                            {
+                              type: "text",
+                              text: prompt
+                            },
+                            {
+                              type: "image",
+                              source: {
+                                type: "base64",
+                                media_type: "image/jpeg",
+                                data: fullPageScreenshot.toString('base64')
+                              }
+                            }
+                          ]
+                        }]
+                      });
+                      analysisText = claudeResponse.content[0].text;
+                      console.log('Claude Analysis:', analysisText);
+                    } catch (claudeError) {
+                      console.error('Claude failed, falling back to OpenAI:', claudeError.message);
+                      // Fall back to OpenAI
+                      if (openai && process.env.OPENAI_API_KEY) {
+                        console.log('Sending to GPT-4 Vision for analysis...');
+                        const openaiResponse = await openai.chat.completions.create({
+                          model: "gpt-4o",
+                          messages: [
+                            {
+                              role: "user",
+                              content: [
+                                {
+                                  type: "text",
+                                  text: prompt
+                                },
+                                {
+                                  type: "image_url",
+                                  image_url: {
+                                    url: `data:image/jpeg;base64,${fullPageScreenshot.toString('base64')}`,
+                                    detail: "high"
+                                  }
+                                }
+                              ]
+                            }
+                          ],
+                          max_tokens: 1000,
+                          temperature: 0.3
+                        });
+                        analysisText = openaiResponse.choices[0].message.content;
+                        console.log('OpenAI Analysis:', analysisText);
+                      } else {
+                        throw claudeError;
+                      }
+                    }
+                  } else if (openai && process.env.OPENAI_API_KEY) {
+                    // Use OpenAI if Claude not available
+                    console.log('Sending to GPT-4 Vision for analysis...');
+                    const openaiResponse = await openai.chat.completions.create({
+                      model: "gpt-4o",
+                      messages: [
+                        {
+                          role: "user",
+                          content: [
+                            {
+                              type: "text",
+                              text: prompt
+                            },
+                            {
+                              type: "image_url",
+                              image_url: {
+                                url: `data:image/jpeg;base64,${fullPageScreenshot.toString('base64')}`,
+                                detail: "high"
+                              }
+                            }
+                          ]
+                        }
+                      ],
+                      max_tokens: 1000,
+                      temperature: 0.3
+                    });
+                    analysisText = openaiResponse.choices[0].message.content;
+                    console.log('OpenAI Analysis:', analysisText);
+                  }
                   
                   // Try to parse as JSON, fallback to text if not valid JSON
                   let analysis;
