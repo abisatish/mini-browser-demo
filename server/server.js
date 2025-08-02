@@ -237,6 +237,10 @@ const __dirname = path.dirname(__filename);
 
   // Optimized function to extract LinkedIn data AND answer questions in one call
   async function extractLinkedInAndAnswerQueries(screenshot, subqueries) {
+    console.log('🔵 API: Checking AI clients...');
+    console.log('🔵 API: Anthropic client available:', !!anthropic);
+    console.log('🔵 API: OpenAI client available:', !!openai);
+    
     if (!anthropic && !openai) {
       throw new Error('No AI client configured (need either Anthropic or OpenAI API key)');
     }
@@ -303,12 +307,16 @@ Use "Not available" for any fields not visible. Be concise and accurate.`
         
         const endTime = Date.now();
         console.log('🔵 API: Claude combined call completed in:', endTime - startTime, 'ms');
+        console.log('🔵 API: Claude response object:', JSON.stringify(claudeResponse, null, 2));
         content = claudeResponse.content[0].text;
+        console.log('🔵 API: Claude content extracted:', content);
         
       } catch (claudeError) {
+        console.error('🔵 API: Claude error details:', claudeError);
         console.error('🔵 API: Claude failed, falling back to OpenAI');
         // Similar logic for OpenAI fallback
         if (openai) {
+          console.log('🔵 API: Using OpenAI as fallback...');
           const openaiResponse = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [{
@@ -316,7 +324,25 @@ Use "Not available" for any fields not visible. Be concise and accurate.`
               content: [
                 {
                   type: "text",
-                  text: `Analyze this LinkedIn profile screenshot and provide both profile data extraction and answers to specific questions. Return JSON with profileData object and answers array.`
+                  text: `Analyze this LinkedIn profile screenshot and provide:
+
+1. First, extract the profile data in this JSON format:
+{
+  "profileData": {
+    "name": "person's full name",
+    "currentPosition": "current job title",
+    "currentCompany": "current employer",
+    "previousCompanies": ["array of previous companies"],
+    "education": "education details",
+    "skills": ["array of skills"],
+    "summary": "professional summary"
+  }
+}
+
+2. Then answer these specific questions:
+${subqueries.map((q, i) => `${i + 1}. ${q}`).join('\n')}
+
+Return a JSON object with both profileData and answers array.`
                 },
                 {
                   type: "image_url",
@@ -330,7 +356,9 @@ Use "Not available" for any fields not visible. Be concise and accurate.`
             max_tokens: 1500,
             temperature: 0.3
           });
+          console.log('🔵 API: OpenAI response:', JSON.stringify(openaiResponse, null, 2));
           content = openaiResponse.choices[0].message.content;
+          console.log('🔵 API: OpenAI content:', content);
         } else {
           throw claudeError;
         }
@@ -338,15 +366,26 @@ Use "Not available" for any fields not visible. Be concise and accurate.`
     }
     
     // Parse the combined response
+    console.log('🔵 API: Raw content from AI:', content);
+    console.log('🔵 API: Content type:', typeof content);
+    console.log('🔵 API: Content length:', content ? content.length : 'content is undefined/null');
+    
+    if (!content) {
+      console.error('🔵 API: ERROR - Content is undefined or null!');
+      throw new Error('AI returned no content');
+    }
+    
     try {
       const jsonMatch = content.match(/```json\n?([\s\S]*?)\n?```/) || [null, content];
       const jsonString = jsonMatch[1] || content;
+      console.log('🔵 API: Extracted JSON string:', jsonString);
       const parsed = JSON.parse(jsonString.trim());
       
       console.log('🔵 API: Combined response parsed successfully');
       return parsed;
     } catch (e) {
       console.error('🔵 API: Failed to parse combined response:', e);
+      console.error('🔵 API: Raw content that failed to parse:', content);
       throw new Error('Failed to parse AI response');
     }
   }
