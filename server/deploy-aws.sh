@@ -25,7 +25,7 @@ sudo apt-get install -y \
     libgtk-3-0
 
 # Clone and setup your app
-git clone https://github.com/yourusername/mini-browser-demo.git
+git clone https://github.com/abisatish/mini-browser-demo.git
 cd mini-browser-demo/server
 npm install
 

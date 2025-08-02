@@ -531,8 +531,8 @@ const __dirname = path.dirname(__filename);
           } else {
             stableCount++;
             
-            // Wait for 3 seconds of stability and significant content
-            if (stableCount === 3 && currentContent.textLength > 5000) {
+            // Wait for 2 seconds of stability and significant content
+            if (stableCount === 2 && currentContent.textLength > 5000) {
               // Check for LinkedIn-specific completion indicators
               const profileComplete = await page.evaluate(() => {
                 const spinners = document.querySelectorAll('.spinner, .loading, [data-loading="true"], .artdeco-spinner').length;
@@ -560,9 +560,9 @@ const __dirname = path.dirname(__filename);
           console.log('🔵 API: ⚠️  Content monitoring timeout - proceeding with capture');
         }
         
-        // Critical delay after stabilization - ensures content is fully rendered
-        console.log('🔵 API: Waiting 1.5 seconds for final render...');
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        // Brief delay after stabilization - ensures content is fully rendered
+        console.log('🔵 API: Waiting 0.8 seconds for final render...');
+        await new Promise(resolve => setTimeout(resolve, 800));
         
         // Take screenshot for GPT analysis
         console.log('🔵 API: Capturing full page screenshot...');
