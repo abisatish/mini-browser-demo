@@ -233,6 +233,14 @@ const __dirname = path.dirname(__filename);
   // Middleware
   app.use(cors()); // Enable CORS for all routes
   app.use(express.json());
+  
+  // Allow iframe embedding
+  app.use((req, res, next) => {
+    res.removeHeader('X-Frame-Options');
+    res.setHeader('Content-Security-Policy', "frame-ancestors *;");
+    next();
+  });
+  
   app.use(express.static(path.join(__dirname, '../client/dist')));
 
   // Optimized function to extract LinkedIn data AND answer questions in one call
