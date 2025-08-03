@@ -232,45 +232,36 @@ export default function MiniBrowserOptimized() {
   };
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!imgRef.current || !contentRef.current) return;
+    if (!imgRef.current) return;
     
     const now = Date.now();
     if (now - lastClickTime.current < 100) return; // Debounce clicks
     lastClickTime.current = now;
     
+    // Get the image element's bounding rect
     const rect = imgRef.current.getBoundingClientRect();
-    const contentRect = contentRef.current.getBoundingClientRect();
     
-    // Calculate click position relative to the actual image dimensions
-    const imgNaturalWidth = 1280;
-    const imgNaturalHeight = 720;
-    const scale = Math.min(rect.width / imgNaturalWidth, rect.height / imgNaturalHeight);
-    const displayedWidth = imgNaturalWidth * scale;
-    const displayedHeight = imgNaturalHeight * scale;
-    const offsetX = (rect.width - displayedWidth) / 2;
-    const offsetY = (rect.height - displayedHeight) / 2;
+    // Calculate click position relative to the image
+    const x = ((e.clientX - rect.left) / rect.width) * 1280;
+    const y = ((e.clientY - rect.top) / rect.height) * 720;
     
-    const relativeX = e.clientX - rect.left - offsetX;
-    const relativeY = e.clientY - rect.top - offsetY;
-    
-    // Only process clicks within the actual image bounds
-    if (relativeX < 0 || relativeX > displayedWidth || relativeY < 0 || relativeY > displayedHeight) {
+    // Make sure click is within bounds
+    if (x < 0 || x > 1280 || y < 0 || y > 720) {
       return;
     }
     
-    // Scale back to original image coordinates
-    const x = Math.round((relativeX / displayedWidth) * imgNaturalWidth);
-    const y = Math.round((relativeY / displayedHeight) * imgNaturalHeight);
+    // Visual feedback - show where we clicked on screen
+    if (contentRef.current) {
+      const indicator = document.createElement('div');
+      indicator.className = 'click-indicator';
+      const contentRect = contentRef.current.getBoundingClientRect();
+      indicator.style.left = `${e.clientX - contentRect.left}px`;
+      indicator.style.top = `${e.clientY - contentRect.top}px`;
+      contentRef.current.appendChild(indicator);
+      setTimeout(() => indicator.remove(), 800);
+    }
     
-    // Visual feedback
-    const indicator = document.createElement('div');
-    indicator.className = 'click-indicator';
-    indicator.style.left = `${e.clientX - contentRect.left}px`;
-    indicator.style.top = `${e.clientY - contentRect.top}px`;
-    contentRef.current.appendChild(indicator);
-    setTimeout(() => indicator.remove(), 800);
-    
-    executeCommand({ cmd: 'click', x, y });
+    executeCommand({ cmd: 'click', x: Math.round(x), y: Math.round(y) });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
