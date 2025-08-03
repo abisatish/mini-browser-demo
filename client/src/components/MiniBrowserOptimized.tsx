@@ -24,11 +24,17 @@ export default function MiniBrowserOptimized() {
     
     ws.onmessage = e => {
       const blob = new Blob([e.data], { type: 'image/jpeg' });
-      const newImg = URL.createObjectURL(blob);
-      setImg(prevImg => {
-        if (prevImg) URL.revokeObjectURL(prevImg);
-        return newImg;
-      });
+      const newImgUrl = URL.createObjectURL(blob);
+      
+      // Preload the image before swapping to avoid white flash
+      const img = new Image();
+      img.onload = () => {
+        setImg(prevImg => {
+          if (prevImg) URL.revokeObjectURL(prevImg);
+          return newImgUrl;
+        });
+      };
+      img.src = newImgUrl;
     };
 
     ws.onerror = () => setConnectionStatus('error');
@@ -99,9 +105,14 @@ export default function MiniBrowserOptimized() {
         tabIndex={0}
       >
         {connectionStatus === 'connected' && img ? (
-          <img src={img} alt="Browser content" />
+          <img src={img} alt="Browser content" className="browser-image" />
         ) : (
-          <div>Connecting...</div>
+          <div className="loading-screen">
+            <div className="loading-container">
+              <div className="loading-spinner-large"></div>
+              <div className="loading-text">Connecting...</div>
+            </div>
+          </div>
         )}
       </div>
     </div>
