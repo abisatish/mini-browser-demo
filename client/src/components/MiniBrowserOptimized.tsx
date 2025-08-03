@@ -250,14 +250,14 @@ export default function MiniBrowserOptimized() {
       return;
     }
     
-    // Visual feedback - show where we clicked on screen
-    if (contentRef.current) {
+    // Visual feedback - show where we clicked on the image
+    if (imgRef.current) {
       const indicator = document.createElement('div');
       indicator.className = 'click-indicator';
-      const contentRect = contentRef.current.getBoundingClientRect();
-      indicator.style.left = `${e.clientX - contentRect.left}px`;
-      indicator.style.top = `${e.clientY - contentRect.top}px`;
-      contentRef.current.appendChild(indicator);
+      indicator.style.position = 'absolute';
+      indicator.style.left = `${e.clientX - rect.left}px`;
+      indicator.style.top = `${e.clientY - rect.top}px`;
+      imgRef.current.parentElement?.appendChild(indicator);
       setTimeout(() => indicator.remove(), 800);
     }
     
