@@ -1,21 +1,18 @@
 .browser-container {
-    width: 90vw;
-    max-width: 1200px;
-    height: 80vh;
-    max-height: 800px;
+    width: 98vw;
+    max-width: 100%;
+    height: 95vh;
+    max-height: 100%;
     margin: 0 auto;
-    border-radius: 16px;
+    border-radius: 8px;
     overflow: hidden;
     background: #ffffff;
     box-shadow: 
       0 0 0 1px rgba(0, 0, 0, 0.05),
-      0 20px 25px -5px rgba(0, 0, 0, 0.1), 
-      0 10px 10px -5px rgba(0, 0, 0, 0.04),
-      0 0 40px rgba(59, 130, 246, 0.1);
+      0 10px 15px -3px rgba(0, 0, 0, 0.1);
     display: flex;
     flex-direction: column;
-    backdrop-filter: blur(10px);
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
   }
   
   .browser-container:hover {
@@ -30,11 +27,11 @@
   .browser-header {
     display: flex;
     align-items: center;
-    height: 72px;
-    background: linear-gradient(to bottom, #ffffff, #fafbfc);
+    height: 48px;
+    background: #fafbfc;
     border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-    padding: 0 20px;
-    gap: 16px;
+    padding: 0 12px;
+    gap: 12px;
     position: relative;
   }
   

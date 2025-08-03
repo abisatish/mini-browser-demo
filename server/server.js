@@ -960,12 +960,21 @@ Use "Not available" for fields not visible. Return only the JSON, no other text.
         console.log('🔵 API: Current page URL:', page.url());
         console.log('🔵 API: Page title:', await page.title());
         
+        // Add a wait to ensure page loads
+        await page.waitForTimeout(1000);
+        console.log('🔵 API: After 1s wait, URL is:', page.url());
+        
         const screenshot = await page.screenshot({ 
           type: 'jpeg', 
           quality: 80,
           fullPage: true
         });
         console.log('🔵 API: Immediate screenshot captured, size:', screenshot.length, 'bytes');
+        
+        // Debug: Save screenshot to see what we're actually capturing
+        const debugPath = `/tmp/api-debug-${Date.now()}.jpg`;
+        await fs.writeFile(debugPath, screenshot);
+        console.log('🔵 API: Debug screenshot saved to:', debugPath);
         
         // Extract LinkedIn data AND answer queries in one call
         console.log('🔵 API: Starting combined extraction and Q&A...');

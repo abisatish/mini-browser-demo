@@ -11,7 +11,7 @@ export const ScanningExample: React.FC = () => {
     setScanResult(null);
 
     try {
-      const response = await fetch('https://insightful-wisdom-production.up.railway.app/api/contextualized', {
+      const response = await fetch('https://21e0a7d5687a.ngrok-free.app/api/contextualized', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
