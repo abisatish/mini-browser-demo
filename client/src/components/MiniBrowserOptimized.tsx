@@ -17,8 +17,15 @@ export default function MiniBrowserOptimized() {
   const [searchResults, setSearchResults] = useState<any[]>([
     {
       title: 'Pratyush Chakraborty LinkedIn profile',
+      link: 'https://www.linkedin.com/in/pratyush-chakraborty-4a0656213/',
+      snippet: 'Pratyush Chakraborty - Facebook, LinkedIn - MathEcon + AI @ Penn',
+      source: 'linkedin',
+      favicon: null
+    },
+    {
+      title: 'Pratyush Chakraborty Waymo LinkedIn profile',
       link: 'https://www.linkedin.com/in/pratyush-chakraborty',
-      snippet: 'Pratyush Chakraborty - Facebook, LinkedIn - Clay.earth',
+      snippet: 'Pratyush Chakraborty - Facebook, LinkedIn - @ Waymo',
       source: 'linkedin',
       favicon: null
     },
