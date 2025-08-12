@@ -5,7 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "start:multi": "node server-multithreaded.js",
     "dev": "node server.js",
+    "dev:multi": "node server-multithreaded.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -21,6 +23,7 @@
     "nodemailer": "^7.0.5",
     "openai": "^5.11.0",
     "playwright": "^1.54.1",
+    "sharp": "^0.34.3",
     "ws": "^8.18.3"
   },
   "engines": {

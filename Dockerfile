@@ -1,6 +1,6 @@
 FROM node:18-slim
 
-# Install dependencies needed for Playwright/Chromium
+# Install dependencies needed for Playwright/Chromium and sharp
 RUN apt-get update && apt-get install -y \
     wget \
     ca-certificates \
@@ -39,6 +39,7 @@ RUN apt-get update && apt-get install -y \
     libxtst6 \
     lsb-release \
     xdg-utils \
+    libvips-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Create app directory
@@ -63,8 +64,18 @@ RUN cd client && npm run build
 # Install Playwright browsers (just Chromium)
 RUN cd server && npx playwright install chromium
 
+# Set default environment variables optimized for Railway (8 vCPUs, 8GB RAM)
+ENV MAX_USERS=3
+ENV TARGET_FPS=15
+ENV SCREENSHOT_QUALITY=80
+ENV BROWSER_WORKERS=2
+ENV BROWSERS_PER_WORKER=2
+ENV NODE_OPTIONS="--max-old-space-size=6144"
+ENV SCREENSHOT_COMPRESSION=false
+ENV PRIORITY_MODE=true
+
 # Expose port (Railway will override this with PORT env var)
 EXPOSE 3001
 
-# Start the server
-CMD ["node", "server/server.js"]
+# Start the multi-threaded server for better performance
+CMD ["node", "server/server-multithreaded.js"]

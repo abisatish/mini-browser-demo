@@ -2,12 +2,29 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "DOCKERFILE",
-    "dockerfilePath": "Dockerfile"
+    "dockerfilePath": "Dockerfile",
+    "buildCommand": "echo 'Using Dockerfile for build'"
   },
   "deploy": {
+    "startCommand": "node server/server-multithreaded.js",
     "healthcheckPath": "/api/health",
-    "healthcheckTimeout": 60,
+    "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 3
+    "restartPolicyMaxRetries": 3,
+    "region": "us-west1"
+  },
+  "variables": {
+    "MAX_USERS": "3",
+    "TARGET_FPS": "15",
+    "SCREENSHOT_QUALITY": "80",
+    "BROWSER_WORKERS": "2",
+    "BROWSERS_PER_WORKER": "2",
+    "NODE_OPTIONS": "--max-old-space-size=6144",
+    "SESSION_TIMEOUT": "1800000",
+    "REQUEST_QUEUE_SIZE": "50",
+    "WORKER_RESTART_DELAY": "3000",
+    "LOG_LEVEL": "info",
+    "SCREENSHOT_COMPRESSION": "false",
+    "PRIORITY_MODE": "true"
   }
 }
