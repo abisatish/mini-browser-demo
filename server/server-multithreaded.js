@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import { cpus } from 'os';
 import { EventEmitter } from 'events';
 
@@ -121,16 +122,52 @@ class BrowserWorkerPool extends EventEmitter {
 
   async initializeWorkers() {
     console.log(`🔧 Initializing ${CONFIG.BROWSER_WORKERS} browser workers...`);
+    console.log(`Current working directory: ${process.cwd()}`);
+    console.log(`__dirname: ${__dirname}`);
     
     for (let i = 0; i < CONFIG.BROWSER_WORKERS; i++) {
-      await this.createWorker(i);
+      try {
+        await this.createWorker(i);
+      } catch (error) {
+        console.error(`Failed to create worker ${i}:`, error);
+      }
     }
     
-    console.log('✅ Browser worker pool initialized');
+    // Check if any workers were created
+    const readyWorkers = Array.from(this.workerStates.values()).filter(w => w.status === 'ready').length;
+    console.log(`✅ Browser worker pool initialized with ${readyWorkers} ready workers`);
+    
+    if (readyWorkers === 0) {
+      console.error('⚠️ WARNING: No workers are ready! Connections will fail.');
+    }
   }
 
   async createWorker(workerId) {
-    const worker = new Worker(path.join(__dirname, 'workers', 'browser-worker.js'), {
+    // Try multiple paths for Docker compatibility
+    const possiblePaths = [
+      path.join(process.cwd(), 'workers', 'browser-worker.js'),
+      path.join(__dirname, 'workers', 'browser-worker.js'),
+      './workers/browser-worker.js',
+      path.resolve('workers/browser-worker.js')
+    ];
+    
+    let workerPath = null;
+    
+    for (const testPath of possiblePaths) {
+      if (fsSync.existsSync(testPath)) {
+        workerPath = testPath;
+        console.log(`Found worker at: ${workerPath}`);
+        break;
+      }
+    }
+    
+    if (!workerPath) {
+      throw new Error(`Worker file not found. Tried paths: ${possiblePaths.join(', ')}`);
+    }
+    
+    console.log(`Creating worker ${workerId} from path: ${workerPath}`);
+    
+    const worker = new Worker(workerPath, {
       workerData: {
         workerId,
         maxBrowsers: CONFIG.BROWSERS_PER_WORKER,
@@ -348,7 +385,10 @@ class ScreenshotWorker extends EventEmitter {
   }
 
   initializeWorker() {
-    this.worker = new Worker(path.join(__dirname, 'workers', 'screenshot-worker.js'), {
+    const workerPath = path.join(process.cwd(), 'workers', 'screenshot-worker.js');
+    console.log(`Creating screenshot worker from path: ${workerPath}`);
+    
+    this.worker = new Worker(workerPath, {
       workerData: {
         quality: CONFIG.SCREENSHOT_QUALITY
       }
