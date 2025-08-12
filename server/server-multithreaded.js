@@ -20,8 +20,8 @@ const CONFIG = {
   MAX_CONCURRENT_USERS: parseInt(process.env.MAX_USERS) || 3,
   BROWSER_WORKERS: parseInt(process.env.BROWSER_WORKERS) || 2, // 2 workers optimal for 3 users
   BROWSERS_PER_WORKER: parseInt(process.env.BROWSERS_PER_WORKER) || 2, // 2 browsers per worker
-  SCREENSHOT_QUALITY: parseInt(process.env.SCREENSHOT_QUALITY) || 80, // Balance quality/performance
-  TARGET_FPS: parseInt(process.env.TARGET_FPS) || 15, // 15 FPS smooth on Railway
+  SCREENSHOT_QUALITY: parseInt(process.env.SCREENSHOT_QUALITY) || 75, // Slightly lower for stability
+  TARGET_FPS: parseInt(process.env.TARGET_FPS) || 10, // 10 FPS more stable during loads
   REQUEST_QUEUE_SIZE: parseInt(process.env.REQUEST_QUEUE_SIZE) || 50,
   SESSION_TIMEOUT: parseInt(process.env.SESSION_TIMEOUT) || 30 * 60 * 1000,
   WORKER_RESTART_DELAY: parseInt(process.env.WORKER_RESTART_DELAY) || 3000,
@@ -792,6 +792,7 @@ async function startServer() {
     });
     
     // Regular screenshot updates for smooth experience
+    let lastScreenshotTime = Date.now();
     const screenshotInterval = setInterval(async () => {
       if (ws.readyState !== ws.OPEN) {
         clearInterval(screenshotInterval);
@@ -805,8 +806,22 @@ async function startServer() {
             cmd: 'requestScreenshot'
           });
           
+          // Handle screenshot response
           if (response.screenshot && ws.readyState === ws.OPEN) {
             ws.send(response.screenshot, { binary: true });
+            lastScreenshotTime = Date.now();
+          } else if (response.skipped) {
+            // Screenshot was skipped (page loading, etc)
+            // Send last screenshot if we have one and it's recent
+            if (Date.now() - lastScreenshotTime > 2000) {
+              // If no screenshot for 2+ seconds, send a loading indicator
+              if (ws.readyState === ws.OPEN) {
+                ws.send(JSON.stringify({
+                  type: 'loading',
+                  reason: response.reason
+                }));
+              }
+            }
           }
         } catch (error) {
           // Silent fail for screenshot updates

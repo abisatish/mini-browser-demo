@@ -203,12 +203,23 @@ async function executeBrowserCommand(browserId, command) {
   try {
     switch (command.cmd) {
       case 'nav':
-        await page.goto(command.url, { 
-          waitUntil: 'domcontentloaded',
-          timeout: 15000 
-        });
-        response.url = page.url();
-        response.title = await page.title();
+        // Mark page as navigating to prevent screenshot errors
+        pages.set(browserId + '_navigating', true);
+        
+        try {
+          await page.goto(command.url, { 
+            waitUntil: 'domcontentloaded',
+            timeout: 15000 
+          });
+          response.url = page.url();
+          response.title = await page.title().catch(() => 'Loading...');
+          
+          // Wait a bit for page to stabilize
+          await page.waitForTimeout(500);
+        } finally {
+          // Clear navigation flag
+          pages.delete(browserId + '_navigating');
+        }
         break;
         
       case 'click':
@@ -241,16 +252,55 @@ async function executeBrowserCommand(browserId, command) {
         break;
         
       case 'requestScreenshot':
-        const screenshot = await page.screenshot({
-          type: 'jpeg',
-          quality: 85,  // Higher quality for 2-3 users
-          fullPage: false,
-          clip: { x: 0, y: 0, width: 1280, height: 720 },
-          timeout: 1000,  // Faster timeout
-          animations: 'disabled'  // Skip animations for speed
-        });
-        response.screenshot = screenshot;
-        stats.screenshotsGenerated++;
+        try {
+          // Check if page is navigating
+          if (pages.has(browserId + '_navigating')) {
+            response.skipped = true;
+            response.reason = 'page_navigating';
+            break;
+          }
+          
+          // Check if page is in a good state for screenshots
+          const pageState = await page.evaluate(() => {
+            return {
+              readyState: document.readyState,
+              isLoading: document.readyState !== 'complete',
+              url: window.location.href
+            };
+          }).catch(() => ({ readyState: 'unknown', isLoading: true }));
+          
+          // Skip screenshot if page is loading
+          if (pageState.isLoading || pageState.readyState === 'loading') {
+            response.skipped = true;
+            response.reason = 'page_loading';
+            break;
+          }
+          
+          // Try to take screenshot with short timeout
+          const screenshot = await page.screenshot({
+            type: 'jpeg',
+            quality: 75,  // Lower quality during frequent updates
+            fullPage: false,
+            clip: { x: 0, y: 0, width: 1280, height: 720 },
+            timeout: 500,  // Very short timeout to prevent blocking
+            animations: 'disabled'
+          }).catch(err => {
+            console.log(`[Worker ${workerId}] Screenshot failed: ${err.message}`);
+            return null;
+          });
+          
+          if (screenshot) {
+            response.screenshot = screenshot;
+            stats.screenshotsGenerated++;
+          } else {
+            response.skipped = true;
+            response.reason = 'screenshot_failed';
+          }
+        } catch (error) {
+          // Don't throw, just skip this screenshot
+          response.skipped = true;
+          response.reason = error.message;
+        }
         break;
         
       case 'goBack':
