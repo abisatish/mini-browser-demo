@@ -362,15 +362,31 @@ class BrowserWorkerPool extends EventEmitter {
     }
     
     // Create browser on selected worker
-    const response = await this.sendToWorker(selectedWorker, {
-      cmd: 'createBrowser',
-      sessionId
-    });
+    console.log(`Creating browser on worker ${selectedWorker} for session ${sessionId}`);
     
-    return {
-      workerId: selectedWorker,
-      browserId: response.browserId
-    };
+    try {
+      const response = await this.sendToWorker(selectedWorker, {
+        cmd: 'createBrowser',
+        sessionId
+      });
+      
+      if (!response.browserId) {
+        throw new Error('No browserId in response');
+      }
+      
+      // Register the browser immediately
+      this.browserAssignments.set(response.browserId, selectedWorker);
+      this.workerStates.get(selectedWorker).browsers.add(response.browserId);
+      console.log(`✅ Browser ${response.browserId} registered on worker ${selectedWorker}`);
+      
+      return {
+        workerId: selectedWorker,
+        browserId: response.browserId
+      };
+    } catch (error) {
+      console.error(`Failed to create browser on worker ${selectedWorker}:`, error);
+      throw error;
+    }
   }
 
   async sendCommand(browserId, command) {
@@ -379,11 +395,25 @@ class BrowserWorkerPool extends EventEmitter {
       throw new Error(`Browser ${browserId} not found`);
     }
     
-    return await this.sendToWorker(workerId, {
-      cmd: 'browserCommand',
-      browserId,
-      command
-    });
+    try {
+      return await this.sendToWorker(workerId, {
+        cmd: 'browserCommand',
+        browserId,
+        command
+      });
+    } catch (error) {
+      // If command fails, browser might have crashed
+      console.error(`Command failed for browser ${browserId}:`, error.message);
+      
+      // Remove the crashed browser from tracking
+      this.browserAssignments.delete(browserId);
+      const workerState = this.workerStates.get(workerId);
+      if (workerState) {
+        workerState.browsers.delete(browserId);
+      }
+      
+      throw error;
+    }
   }
 
   async closeBrowser(browserId) {
@@ -687,6 +717,19 @@ async function startServer() {
         requestQueue.setProcessing(request.sessionId, true);
         
         try {
+          // Check if browser exists, recreate if needed
+          if (!session.browserId || !browserPool.browserAssignments.has(session.browserId)) {
+            console.log(`Browser missing for session ${session.id}, creating new one...`);
+            try {
+              const { browserId } = await browserPool.assignBrowser(session.id);
+              session.browserId = browserId;
+              console.log(`New browser ${browserId} assigned to session ${session.id}`);
+            } catch (assignError) {
+              console.error(`Failed to recreate browser:`, assignError);
+              throw assignError;
+            }
+          }
+          
           // Send command to browser worker
           const response = await browserPool.sendCommand(
             session.browserId,
@@ -720,10 +763,18 @@ async function startServer() {
         } catch (error) {
           console.error('Command execution error:', error);
           session.stats.errors++;
+          
+          // If browser not found, mark session for browser recreation
+          if (error.message.includes('Browser') && error.message.includes('not found')) {
+            console.log(`Browser crashed for session ${session.id}, will recreate on next command`);
+            session.browserId = null;
+          }
+          
           if (request.callback) {
             await request.callback({
               type: 'error',
-              message: error.message
+              message: error.message,
+              recoverable: error.message.includes('not found')
             });
           }
         } finally {
