@@ -151,11 +151,21 @@ class BrowserWorkerPool extends EventEmitter {
       lastHealthCheck: Date.now()
     });
 
-    // Initialize the worker
-    await this.sendToWorker(workerId, { cmd: 'init' });
-    this.workerStates.get(workerId).status = 'ready';
-    
-    console.log(`✅ Worker ${workerId} created and ready`);
+    // Initialize the worker - don't wait for response during setup
+    try {
+      // Give worker time to start up
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Mark as ready immediately - worker will send stats when ready
+      this.workerStates.get(workerId).status = 'ready';
+      console.log(`✅ Worker ${workerId} created and ready`);
+      
+      // Send init command but don't block
+      worker.postMessage({ cmd: 'init', messageId: 'init_' + workerId });
+    } catch (error) {
+      console.error(`Failed to initialize worker ${workerId}:`, error);
+      this.workerStates.get(workerId).status = 'error';
+    }
   }
 
   handleWorkerMessage(workerId, msg) {

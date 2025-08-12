@@ -314,13 +314,14 @@ setInterval(() => {
 // Message handler from main thread
 parentPort.on('message', async (msg) => {
   const { messageId } = msg;
-  let response = { messageId };
+  let response = { messageId: messageId || 'no_id' };
   
   try {
     switch (msg.cmd) {
       case 'init':
         console.log(`[Worker ${workerId}] Initialized`);
         response.status = 'ready';
+        response.workerId = workerId;
         break;
         
       case 'createBrowser':
@@ -362,8 +363,12 @@ parentPort.on('message', async (msg) => {
     console.error(`[Worker ${workerId}] Error:`, error);
   }
   
-  // Send response back to main thread
-  parentPort.postMessage(response);
+  // Always send response back to main thread
+  if (parentPort) {
+    parentPort.postMessage(response);
+  } else {
+    console.error(`[Worker ${workerId}] Parent port not available`);
+  }
 });
 
 // Cleanup on exit

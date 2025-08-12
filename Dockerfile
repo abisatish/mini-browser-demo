@@ -77,5 +77,6 @@ ENV PRIORITY_MODE=true
 # Expose port (Railway will override this with PORT env var)
 EXPOSE 3001
 
-# Start the multi-threaded server for better performance
-CMD ["node", "server/server-multithreaded.js"]
+# Change to server directory and start the multi-threaded server
+WORKDIR /app/server
+CMD ["node", "server-multithreaded.js"]
