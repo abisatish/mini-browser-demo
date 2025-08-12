@@ -175,9 +175,22 @@ class BrowserWorkerPool extends EventEmitter {
       }
     });
 
-    worker.on('message', (msg) => this.handleWorkerMessage(workerId, msg));
-    worker.on('error', (err) => this.handleWorkerError(workerId, err));
-    worker.on('exit', (code) => this.handleWorkerExit(workerId, code));
+    // Add error handler immediately
+    worker.on('error', (err) => {
+      console.error(`❌ Worker ${workerId} error during creation:`, err);
+      console.error(`Error stack:`, err.stack);
+      this.handleWorkerError(workerId, err);
+    });
+    
+    worker.on('exit', (code) => {
+      console.log(`Worker ${workerId} exited during creation with code ${code}`);
+      this.handleWorkerExit(workerId, code);
+    });
+    
+    worker.on('message', (msg) => {
+      console.log(`Worker ${workerId} message:`, msg.type || msg);
+      this.handleWorkerMessage(workerId, msg);
+    });
 
     this.workers[workerId] = worker;
     this.workerStates.set(workerId, {
@@ -188,20 +201,41 @@ class BrowserWorkerPool extends EventEmitter {
       lastHealthCheck: Date.now()
     });
 
-    // Initialize the worker - don't wait for response during setup
+    // Initialize the worker with better error handling
     try {
-      // Give worker time to start up
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log(`Waiting for worker ${workerId} to start...`);
       
-      // Mark as ready immediately - worker will send stats when ready
+      // Give worker time to start up and check if it's still alive
+      await new Promise((resolve, reject) => {
+        const checkInterval = setInterval(() => {
+          if (!this.workers[workerId]) {
+            clearInterval(checkInterval);
+            reject(new Error(`Worker ${workerId} died during startup`));
+          }
+        }, 100);
+        
+        setTimeout(() => {
+          clearInterval(checkInterval);
+          resolve();
+        }, 2000);
+      });
+      
+      // Check if worker is still there
+      if (!this.workers[workerId]) {
+        throw new Error(`Worker ${workerId} failed to start`);
+      }
+      
+      // Mark as ready
       this.workerStates.get(workerId).status = 'ready';
-      console.log(`✅ Worker ${workerId} created and ready`);
+      console.log(`✅ Worker ${workerId} marked as ready`);
       
-      // Send init command but don't block
+      // Send init command
       worker.postMessage({ cmd: 'init', messageId: 'init_' + workerId });
+      
     } catch (error) {
-      console.error(`Failed to initialize worker ${workerId}:`, error);
+      console.error(`❌ Failed to initialize worker ${workerId}:`, error);
       this.workerStates.get(workerId).status = 'error';
+      throw error;
     }
   }
 

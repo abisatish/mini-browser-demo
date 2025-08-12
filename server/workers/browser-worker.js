@@ -1,10 +1,23 @@
 import { parentPort, workerData } from 'worker_threads';
-import { chromium } from 'playwright';
+
+// Log startup immediately
+console.log('[Worker Thread] Starting browser worker...');
+console.log('[Worker Thread] Worker data:', workerData);
+
+let chromium;
+try {
+  const playwright = await import('playwright');
+  chromium = playwright.chromium;
+  console.log('[Worker Thread] Playwright loaded successfully');
+} catch (error) {
+  console.error('[Worker Thread] Failed to load Playwright:', error);
+  process.exit(1);
+}
 
 // Worker configuration
 const { workerId, maxBrowsers, headless } = workerData;
 
-console.log(`[Worker ${workerId}] Browser worker starting...`);
+console.log(`[Worker ${workerId}] Browser worker starting with config:`, { workerId, maxBrowsers, headless });
 
 // Browser management
 const browsers = new Map();
