@@ -15,13 +15,13 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Configuration optimized for Railway (8 vCPUs, 8GB RAM) - 2-3 users SMOOTH performance
+// Configuration optimized for Railway (8 vCPUs, 8GB RAM) - 2-3 users STABLE performance
 const CONFIG = {
   MAX_CONCURRENT_USERS: parseInt(process.env.MAX_USERS) || 3,
-  BROWSER_WORKERS: parseInt(process.env.BROWSER_WORKERS) || 2, // 2 workers optimal for 3 users
-  BROWSERS_PER_WORKER: parseInt(process.env.BROWSERS_PER_WORKER) || 2, // 2 browsers per worker
-  SCREENSHOT_QUALITY: parseInt(process.env.SCREENSHOT_QUALITY) || 75, // Slightly lower for stability
-  TARGET_FPS: parseInt(process.env.TARGET_FPS) || 10, // 10 FPS more stable during loads
+  BROWSER_WORKERS: parseInt(process.env.BROWSER_WORKERS) || 2, // 2 workers for stability
+  BROWSERS_PER_WORKER: parseInt(process.env.BROWSERS_PER_WORKER) || 1, // Only 1 browser per worker to prevent crashes
+  SCREENSHOT_QUALITY: parseInt(process.env.SCREENSHOT_QUALITY) || 70, // Lower for stability
+  TARGET_FPS: parseInt(process.env.TARGET_FPS) || 8, // 8 FPS to reduce load
   REQUEST_QUEUE_SIZE: parseInt(process.env.REQUEST_QUEUE_SIZE) || 50,
   SESSION_TIMEOUT: parseInt(process.env.SESSION_TIMEOUT) || 30 * 60 * 1000,
   WORKER_RESTART_DELAY: parseInt(process.env.WORKER_RESTART_DELAY) || 3000,

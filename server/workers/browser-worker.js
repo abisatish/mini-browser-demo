@@ -76,10 +76,16 @@ async function createBrowser(sessionId) {
   try {
     console.log(`[Worker ${workerId}] Creating browser ${browserId} for session ${sessionId}`);
     
-    // Launch browser with optimized settings
+    // Launch browser with optimized settings and memory limits
     const browser = await chromium.launch({
       headless: headless,
-      args: BROWSER_ARGS,
+      args: [
+        ...BROWSER_ARGS,
+        '--js-flags=--max-old-space-size=1024',  // 1GB heap limit for JavaScript
+        '--disable-dev-shm-usage',  // Already in BROWSER_ARGS but critical
+        '--aggressive-cache-discard',
+        '--aggressive-tab-discard'
+      ],
       // Reduce resource usage
       chromiumSandbox: false,
       handleSIGINT: false,
@@ -124,10 +130,33 @@ async function createBrowser(sessionId) {
     // Create initial page
     const page = await context.newPage();
     
-    // Set up error handling
-    page.on('crash', () => {
-      console.error(`[Worker ${workerId}] Page crashed for browser ${browserId}`);
-      handleBrowserError(browserId, new Error('Page crashed'));
+    // Set up error handling with auto-recovery
+    page.on('crash', async () => {
+      console.error(`[Worker ${workerId}] Page crashed for browser ${browserId}, attempting recovery...`);
+      
+      // Try to recreate the page
+      try {
+        // Close the crashed page
+        await page.close().catch(() => {});
+        
+        // Create a new page
+        const newPage = await context.newPage();
+        pages.set(browserId, newPage);
+        
+        // Re-setup crash handler
+        newPage.on('crash', () => {
+          console.error(`[Worker ${workerId}] Page crashed again for browser ${browserId}`);
+          handleBrowserError(browserId, new Error('Page crashed repeatedly'));
+        });
+        
+        // Navigate to a safe page
+        await newPage.goto('about:blank', { timeout: 5000 }).catch(() => {});
+        
+        console.log(`[Worker ${workerId}] Page recovered for browser ${browserId}`);
+      } catch (error) {
+        console.error(`[Worker ${workerId}] Failed to recover page:`, error);
+        handleBrowserError(browserId, new Error('Page crash unrecoverable'));
+      }
     });
     
     page.on('pageerror', (error) => {
@@ -206,6 +235,16 @@ async function executeBrowserCommand(browserId, command) {
         // Mark page as navigating to prevent screenshot errors
         pages.set(browserId + '_navigating', true);
         
+        // Log heavy pages for debugging
+        const isHeavyPage = command.url.includes('linkedin.com/checkpoint') || 
+                           command.url.includes('linkedin.com/login') ||
+                           command.url.includes('signin') ||
+                           command.url.includes('auth');
+        
+        if (isHeavyPage) {
+          console.log(`[Worker ${workerId}] Navigating to heavy page: ${command.url}`);
+        }
+        
         try {
           await page.goto(command.url, { 
             waitUntil: 'domcontentloaded',
@@ -223,8 +262,19 @@ async function executeBrowserCommand(browserId, command) {
         break;
         
       case 'click':
-        await page.mouse.click(command.x, command.y);
-        await page.waitForTimeout(100);
+        // Check current URL for potentially heavy pages
+        const currentUrl = page.url();
+        
+        // Click with shorter timeout for heavy pages like LinkedIn login
+        if (currentUrl.includes('linkedin.com') || currentUrl.includes('login') || currentUrl.includes('signin')) {
+          // For auth pages, click and don't wait for navigation
+          await page.mouse.click(command.x, command.y);
+          // Don't wait for navigation completion
+          response.warning = 'Auth page - navigation may take time';
+        } else {
+          await page.mouse.click(command.x, command.y);
+          await page.waitForTimeout(100);
+        }
         break;
         
       case 'type':
@@ -258,6 +308,7 @@ async function executeBrowserCommand(browserId, command) {
           response.reason = 'page_navigating';
           break;
         }
+        
         
         // Quick check if page exists and is ready
         try {
