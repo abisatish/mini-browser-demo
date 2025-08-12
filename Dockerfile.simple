@@ -1,0 +1,30 @@
+FROM node:18
+
+# Install Chromium dependencies
+RUN apt-get update && apt-get install -y \
+    chromium \
+    chromium-sandbox \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy and install
+COPY . .
+RUN npm install
+RUN cd client && npm install && npm run build
+RUN cd server && npm install
+
+# Use system Chromium
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+
+# Environment variables
+ENV MAX_USERS=3
+ENV TARGET_FPS=15
+ENV SCREENSHOT_QUALITY=80
+ENV NODE_OPTIONS="--max-old-space-size=6144"
+
+EXPOSE 3001
+
+WORKDIR /app/server
+CMD ["node", "server-multithreaded.js"]
