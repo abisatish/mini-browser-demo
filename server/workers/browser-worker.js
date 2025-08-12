@@ -387,8 +387,15 @@ parentPort.on('message', async (msg) => {
         break;
         
       case 'createBrowser':
-        const browserId = await createBrowser(msg.sessionId);
-        response.browserId = browserId;
+        console.log(`[Worker ${workerId}] Received createBrowser command for session ${msg.sessionId}`);
+        try {
+          const browserId = await createBrowser(msg.sessionId);
+          response.browserId = browserId;
+          console.log(`[Worker ${workerId}] Browser created: ${browserId}`);
+        } catch (error) {
+          console.error(`[Worker ${workerId}] Failed to create browser:`, error);
+          response.error = error.message;
+        }
         break;
         
       case 'closeBrowser':
@@ -427,6 +434,7 @@ parentPort.on('message', async (msg) => {
   
   // Always send response back to main thread
   if (parentPort) {
+    console.log(`[Worker ${workerId}] Sending response for command ${msg.cmd}, messageId: ${response.messageId}`);
     parentPort.postMessage(response);
   } else {
     console.error(`[Worker ${workerId}] Parent port not available`);

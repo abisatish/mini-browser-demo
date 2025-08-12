@@ -328,20 +328,21 @@ class BrowserWorkerPool extends EventEmitter {
       const messageId = `msg_${Date.now()}_${Math.random()}`;
       message.messageId = messageId;
       
-      const timeout = setTimeout(() => {
-        worker.removeAllListeners('message'); // Clean up all listeners on timeout
-        reject(new Error(`Worker ${workerId} timeout`));
-      }, 10000);
-      
+      // Handler for this specific message
       const handler = (msg) => {
         if (msg.messageId === messageId) {
           clearTimeout(timeout);
-          worker.removeListener('message', handler); // Use removeListener instead of off
+          worker.removeListener('message', handler);
           resolve(msg);
         }
       };
       
-      worker.once('message', handler); // Use once to auto-remove listener
+      const timeout = setTimeout(() => {
+        worker.removeListener('message', handler); // Only remove this handler
+        reject(new Error(`Worker ${workerId} timeout`));
+      }, 10000);
+      
+      worker.on('message', handler);
       worker.postMessage(message);
     });
   }
