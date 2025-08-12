@@ -133,6 +133,10 @@ class BrowserWorkerPool extends EventEmitter {
       }
     }
     
+    // Wait a bit for workers to send their first stats
+    console.log('⏳ Waiting for workers to become ready...');
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
     // Check if any workers were created
     const readyWorkers = Array.from(this.workerStates.values()).filter(w => w.status === 'ready').length;
     console.log(`✅ Browser worker pool initialized with ${readyWorkers} ready workers`);
@@ -255,8 +259,15 @@ class BrowserWorkerPool extends EventEmitter {
         
       case 'workerStats':
         const state = this.workerStates.get(workerId);
-        state.load = msg.load;
-        state.lastHealthCheck = Date.now();
+        if (state) {
+          state.load = msg.stats?.load || msg.load || 0;
+          state.lastHealthCheck = Date.now();
+          // Mark worker as ready if it's sending stats
+          if (state.status !== 'ready') {
+            state.status = 'ready';
+            console.log(`✅ Worker ${workerId} is now ready (via stats)`);
+          }
+        }
         break;
         
       case 'response':
