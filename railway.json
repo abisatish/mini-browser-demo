@@ -6,7 +6,6 @@
     "buildCommand": "echo 'Using Dockerfile for build'"
   },
   "deploy": {
-    "startCommand": "cd server && node server-multithreaded.js",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",
