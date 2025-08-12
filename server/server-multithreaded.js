@@ -329,18 +329,19 @@ class BrowserWorkerPool extends EventEmitter {
       message.messageId = messageId;
       
       const timeout = setTimeout(() => {
+        worker.removeAllListeners('message'); // Clean up all listeners on timeout
         reject(new Error(`Worker ${workerId} timeout`));
       }, 10000);
       
       const handler = (msg) => {
         if (msg.messageId === messageId) {
           clearTimeout(timeout);
-          worker.off('message', handler);
+          worker.removeListener('message', handler); // Use removeListener instead of off
           resolve(msg);
         }
       };
       
-      worker.on('message', handler);
+      worker.once('message', handler); // Use once to auto-remove listener
       worker.postMessage(message);
     });
   }
@@ -793,14 +794,22 @@ async function startServer() {
     
     // Regular screenshot updates for smooth experience
     let lastScreenshotTime = Date.now();
+    let screenshotInProgress = false;
+    
     const screenshotInterval = setInterval(async () => {
       if (ws.readyState !== ws.OPEN) {
         clearInterval(screenshotInterval);
         return;
       }
       
+      // Skip if previous screenshot still in progress
+      if (screenshotInProgress) {
+        return;
+      }
+      
       const session = sessionManager.getSession(ws.sessionId);
       if (session && session.browserId) {
+        screenshotInProgress = true;
         try {
           const response = await browserPool.sendCommand(session.browserId, {
             cmd: 'requestScreenshot'
@@ -825,6 +834,8 @@ async function startServer() {
           }
         } catch (error) {
           // Silent fail for screenshot updates
+        } finally {
+          screenshotInProgress = false;
         }
       }
     }, 1000 / CONFIG.TARGET_FPS);

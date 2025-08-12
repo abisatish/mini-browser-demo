@@ -252,54 +252,53 @@ async function executeBrowserCommand(browserId, command) {
         break;
         
       case 'requestScreenshot':
+        // SKIP screenshots entirely during navigation
+        if (pages.has(browserId + '_navigating')) {
+          response.skipped = true;
+          response.reason = 'page_navigating';
+          break;
+        }
+        
+        // Quick check if page exists and is ready
         try {
-          // Check if page is navigating
-          if (pages.has(browserId + '_navigating')) {
+          const pageExists = await page.evaluate(() => true).catch(() => false);
+          if (!pageExists) {
             response.skipped = true;
-            response.reason = 'page_navigating';
+            response.reason = 'page_not_ready';
             break;
           }
-          
-          // Check if page is in a good state for screenshots
-          const pageState = await page.evaluate(() => {
-            return {
-              readyState: document.readyState,
-              isLoading: document.readyState !== 'complete',
-              url: window.location.href
-            };
-          }).catch(() => ({ readyState: 'unknown', isLoading: true }));
-          
-          // Skip screenshot if page is loading
-          if (pageState.isLoading || pageState.readyState === 'loading') {
-            response.skipped = true;
-            response.reason = 'page_loading';
-            break;
-          }
-          
-          // Try to take screenshot with short timeout
-          const screenshot = await page.screenshot({
-            type: 'jpeg',
-            quality: 75,  // Lower quality during frequent updates
-            fullPage: false,
-            clip: { x: 0, y: 0, width: 1280, height: 720 },
-            timeout: 500,  // Very short timeout to prevent blocking
-            animations: 'disabled'
-          }).catch(err => {
-            console.log(`[Worker ${workerId}] Screenshot failed: ${err.message}`);
-            return null;
-          });
+        } catch {
+          response.skipped = true;
+          response.reason = 'page_error';
+          break;
+        }
+        
+        // Take screenshot WITHOUT waiting for fonts or animations
+        try {
+          const screenshot = await Promise.race([
+            page.screenshot({
+              type: 'jpeg',
+              quality: 70,
+              fullPage: false,
+              clip: { x: 0, y: 0, width: 1280, height: 720 },
+              animations: 'allow', // Don't wait for animations to finish
+              timeout: 300  // Even shorter timeout
+            }),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Screenshot timeout')), 350)
+            )
+          ]).catch(() => null);
           
           if (screenshot) {
             response.screenshot = screenshot;
             stats.screenshotsGenerated++;
           } else {
             response.skipped = true;
-            response.reason = 'screenshot_failed';
+            response.reason = 'timeout';
           }
-        } catch (error) {
-          // Don't throw, just skip this screenshot
+        } catch {
           response.skipped = true;
-          response.reason = error.message;
+          response.reason = 'failed';
         }
         break;
         
