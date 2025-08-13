@@ -15,13 +15,13 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Configuration optimized for Railway (8 vCPUs, 8GB RAM) - 2-3 users STABLE performance
+// Configuration optimized for Railway (8 vCPUs, 8GB RAM) - 2-3 users
 const CONFIG = {
   MAX_CONCURRENT_USERS: parseInt(process.env.MAX_USERS) || 3,
-  BROWSER_WORKERS: parseInt(process.env.BROWSER_WORKERS) || 2, // 2 workers for stability
-  BROWSERS_PER_WORKER: parseInt(process.env.BROWSERS_PER_WORKER) || 1, // Only 1 browser per worker to prevent crashes
-  SCREENSHOT_QUALITY: parseInt(process.env.SCREENSHOT_QUALITY) || 70, // Lower for stability
-  TARGET_FPS: parseInt(process.env.TARGET_FPS) || 8, // 8 FPS to reduce load
+  BROWSER_WORKERS: parseInt(process.env.BROWSER_WORKERS) || 2, // 2 workers
+  BROWSERS_PER_WORKER: parseInt(process.env.BROWSERS_PER_WORKER) || 2, // 2 browsers per worker (like old working code)
+  SCREENSHOT_QUALITY: parseInt(process.env.SCREENSHOT_QUALITY) || 80,
+  TARGET_FPS: parseInt(process.env.TARGET_FPS) || 15, // Back to 15 FPS
   REQUEST_QUEUE_SIZE: parseInt(process.env.REQUEST_QUEUE_SIZE) || 50,
   SESSION_TIMEOUT: parseInt(process.env.SESSION_TIMEOUT) || 30 * 60 * 1000,
   WORKER_RESTART_DELAY: parseInt(process.env.WORKER_RESTART_DELAY) || 3000,
@@ -56,7 +56,16 @@ class SessionManager extends EventEmitter {
       stats: {
         commands: 0,
         screenshots: 0,
-        errors: 0
+        errors: 0,
+        droppedFrames: 0
+      },
+      // Adaptive FPS tracking
+      adaptiveFPS: {
+        current: CONFIG.TARGET_FPS,
+        min: 5,
+        max: CONFIG.TARGET_FPS,
+        lastAdjust: Date.now(),
+        backpressureCount: 0
       }
     };
     
@@ -116,6 +125,8 @@ class BrowserWorkerPool extends EventEmitter {
     this.browserAssignments = new Map(); // browserId -> workerId
     this.requestQueue = [];
     this.nextWorkerId = 0;
+    this.workerRestartCooldowns = new Map(); // workerId -> lastRestartTime
+    this.workerRestartCounts = new Map(); // workerId -> restart count
     
     this.initializeWorkers();
   }
@@ -295,7 +306,24 @@ class BrowserWorkerPool extends EventEmitter {
   }
 
   async restartWorker(workerId) {
-    console.log(`🔄 Restarting worker ${workerId}...`);
+    // ChatGPT optimization: Safer worker restarts with cooldown
+    const now = Date.now();
+    const lastRestart = this.workerRestartCooldowns.get(workerId) || 0;
+    const restartCount = this.workerRestartCounts.get(workerId) || 0;
+    
+    // Exponential backoff for repeated restarts
+    const cooldownMs = Math.min(CONFIG.WORKER_RESTART_DELAY * Math.pow(2, restartCount), 30000);
+    
+    if (now - lastRestart < cooldownMs) {
+      console.log(`⚠️ Worker ${workerId} restart cooldown active (${cooldownMs}ms), skipping...`);
+      return;
+    }
+    
+    console.log(`🔄 Restarting worker ${workerId} (attempt ${restartCount + 1})...`);
+    
+    // Update restart tracking
+    this.workerRestartCooldowns.set(workerId, now);
+    this.workerRestartCounts.set(workerId, restartCount + 1);
     
     // Clean up old worker
     const oldWorker = this.workers[workerId];
@@ -310,11 +338,25 @@ class BrowserWorkerPool extends EventEmitter {
       }
     }
     
-    // Wait before restarting
-    await new Promise(resolve => setTimeout(resolve, CONFIG.WORKER_RESTART_DELAY));
+    // Wait with exponential backoff
+    await new Promise(resolve => setTimeout(resolve, cooldownMs));
     
-    // Create new worker
-    await this.createWorker(workerId);
+    try {
+      // Create new worker
+      await this.createWorker(workerId);
+      
+      // Reset restart count on successful restart
+      this.workerRestartCounts.set(workerId, 0);
+      console.log(`✅ Worker ${workerId} restarted successfully`);
+    } catch (error) {
+      console.error(`❌ Failed to restart worker ${workerId}:`, error);
+      
+      // If too many failures, mark worker as permanently failed
+      if (restartCount >= 5) {
+        console.error(`🚫 Worker ${workerId} failed too many times, marking as dead`);
+        this.workerStates.set(workerId, { status: 'dead' });
+      }
+    }
   }
 
   async sendToWorker(workerId, message) {
@@ -328,19 +370,17 @@ class BrowserWorkerPool extends EventEmitter {
       const messageId = `msg_${Date.now()}_${Math.random()}`;
       message.messageId = messageId;
       
-      // Handler for this specific message
+      const timeout = setTimeout(() => {
+        reject(new Error(`Worker ${workerId} timeout`));
+      }, 10000);
+      
       const handler = (msg) => {
         if (msg.messageId === messageId) {
           clearTimeout(timeout);
-          worker.removeListener('message', handler);
+          worker.off('message', handler);
           resolve(msg);
         }
       };
-      
-      const timeout = setTimeout(() => {
-        worker.removeListener('message', handler); // Only remove this handler
-        reject(new Error(`Worker ${workerId} timeout`));
-      }, 10000);
       
       worker.on('message', handler);
       worker.postMessage(message);
@@ -596,29 +636,269 @@ async function startServer() {
   app.use(express.json());
   app.use(express.static(path.join(__dirname, '../client/dist')));
   
-  // Health check with detailed stats
-  app.get('/api/health', (req, res) => {
+  // Health check with detailed stats and resource guardrails
+  app.get('/api/health', (_req, res) => {
+    const memUsage = process.memoryUsage();
+    const heapUsedPercent = (memUsage.heapUsed / memUsage.heapTotal) * 100;
+    const workerStats = browserPool.getStats();
+    
+    // ChatGPT optimization: Resource guardrails
+    const healthSignals = {
+      memory: heapUsedPercent < 80 ? 'healthy' : heapUsedPercent < 90 ? 'warning' : 'critical',
+      workers: workerStats.workers.filter(w => w.status === 'ready').length > 0 ? 'healthy' : 'critical',
+      sessions: sessionManager.getSessionCount() < CONFIG.MAX_CONCURRENT_USERS ? 'healthy' : 'at_capacity',
+      requestQueue: requestQueue.size() < CONFIG.REQUEST_QUEUE_SIZE * 0.8 ? 'healthy' : 'congested'
+    };
+    
+    // Determine overall health
+    const criticalCount = Object.values(healthSignals).filter(s => s === 'critical').length;
+    const overallHealth = criticalCount > 0 ? 'unhealthy' : 
+                          Object.values(healthSignals).some(s => s === 'warning') ? 'degraded' : 'healthy';
+    
     const stats = {
-      status: 'ok',
+      status: overallHealth,
       timestamp: new Date().toISOString(),
       server: {
         uptime: process.uptime(),
-        memory: process.memoryUsage(),
+        memory: {
+          ...memUsage,
+          heapUsedPercent: heapUsedPercent.toFixed(2)
+        },
         cpu: process.cpuUsage()
       },
       sessions: {
         active: sessionManager.getSessionCount(),
-        max: CONFIG.MAX_CONCURRENT_USERS
+        max: CONFIG.MAX_CONCURRENT_USERS,
+        health: healthSignals.sessions
       },
-      workers: browserPool.getStats(),
+      workers: {
+        ...workerStats,
+        health: healthSignals.workers
+      },
       queues: {
         requests: requestQueue.size(),
-        screenshots: screenshotWorker.getQueueSize()
-      }
+        screenshots: screenshotWorker.getQueueSize(),
+        health: healthSignals.requestQueue
+      },
+      healthSignals,
+      recommendation: criticalCount > 0 ? 'System under stress - consider reducing load' : 
+                      overallHealth === 'degraded' ? 'Monitor system closely' : 'System operating normally'
     };
     
-    res.json(stats);
+    res.status(overallHealth === 'unhealthy' ? 503 : 200).json(stats);
   });
+  
+  // ChatGPT optimization: Single global request queue pump
+  let globalPumpRunning = false;
+  async function globalRequestQueuePump() {
+    if (globalPumpRunning) return;
+    globalPumpRunning = true;
+    
+    while (requestQueue.size() > 0) {
+      const request = requestQueue.getNext();
+      if (!request) break;
+      
+      const session = sessionManager.getSession(request.sessionId);
+      if (!session) continue;
+      
+      // Check if session is already processing
+      if (requestQueue.isProcessing(request.sessionId)) {
+        // Re-queue the request
+        requestQueue.add(request);
+        await new Promise(resolve => setTimeout(resolve, 20));
+        continue;
+      }
+      
+      requestQueue.setProcessing(request.sessionId, true);
+      
+      // Process request asynchronously without blocking pump
+      (async () => {
+        try {
+          // Check if browser exists, recreate if needed
+          if (!session.browserId || !browserPool.browserAssignments.has(session.browserId)) {
+            console.log(`Browser missing for session ${session.id}, creating new one...`);
+            try {
+              const { browserId } = await browserPool.assignBrowser(session.id);
+              session.browserId = browserId;
+              console.log(`New browser ${browserId} assigned to session ${session.id}`);
+            } catch (assignError) {
+              console.error(`Failed to recreate browser:`, assignError);
+              throw assignError;
+            }
+          }
+          
+          // Send command to browser worker
+          const response = await browserPool.sendCommand(
+            session.browserId,
+            request.command
+          );
+          
+          // Handle screenshot responses
+          if (response.screenshot && response.compressed) {
+            // Direct send - already compressed by browser worker
+            if (session.ws.readyState === session.ws.OPEN) {
+              session.ws.send(response.screenshot, { binary: true });
+            }
+            session.stats.screenshots++;
+          }
+          
+          // Send loading states immediately for navigation
+          if (response.loading !== undefined || response.message) {
+            if (session.ws.readyState === session.ws.OPEN) {
+              session.ws.send(JSON.stringify({
+                type: 'navigation',
+                loading: response.loading,
+                message: response.message,
+                url: response.url
+              }));
+            }
+          }
+          
+          // Send response to client
+          if (request.callback) {
+            await request.callback(response);
+          }
+        } catch (error) {
+          console.error('Command execution error:', error);
+          session.stats.errors++;
+          
+          // If browser not found, mark session for browser recreation
+          if (error.message.includes('Browser') && error.message.includes('not found')) {
+            console.log(`Browser crashed for session ${session.id}, will recreate on next command`);
+            session.browserId = null;
+          }
+          
+          if (request.callback) {
+            await request.callback({
+              type: 'error',
+              message: error.message,
+              recoverable: error.message.includes('not found')
+            });
+          }
+        } finally {
+          requestQueue.setProcessing(request.sessionId, false);
+        }
+      })();
+      
+      // Small delay between processing to prevent CPU saturation
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    
+    globalPumpRunning = false;
+  }
+  
+  // ChatGPT optimization: Single global screenshot timer
+  const screenshotSessions = new Map(); // sessionId -> interval data
+  
+  async function globalScreenshotPump() {
+    for (const session of sessionManager.getActiveSessions()) {
+      if (!session.browserId || !session.ws || session.ws.readyState !== session.ws.OPEN) {
+        continue;
+      }
+      
+      // Get or create session screenshot data
+      let ssData = screenshotSessions.get(session.id);
+      if (!ssData) {
+        ssData = {
+          lastShot: 0,
+          inProgress: false,
+          frameInterval: 1000 / session.adaptiveFPS.current
+        };
+        screenshotSessions.set(session.id, ssData);
+      }
+      
+      const now = Date.now();
+      
+      // Update frame interval based on adaptive FPS
+      ssData.frameInterval = 1000 / session.adaptiveFPS.current;
+      
+      // Skip if not time for next frame or still processing
+      if (now - ssData.lastShot < ssData.frameInterval || ssData.inProgress) {
+        continue;
+      }
+      
+      // Check backpressure
+      const bufferedAmount = session.ws.bufferedAmount || 0;
+      const BACKPRESSURE_THRESHOLD = 256 * 1024;
+      
+      if (bufferedAmount > BACKPRESSURE_THRESHOLD) {
+        session.adaptiveFPS.backpressureCount++;
+        session.stats.droppedFrames++;
+        
+        if (session.adaptiveFPS.backpressureCount > 3) {
+          const newFPS = Math.max(session.adaptiveFPS.min, session.adaptiveFPS.current - 2);
+          if (newFPS !== session.adaptiveFPS.current) {
+            session.adaptiveFPS.current = newFPS;
+            console.log(`📉 Reduced FPS to ${newFPS} for session ${session.id}`);
+          }
+          session.adaptiveFPS.backpressureCount = 0;
+        }
+        continue;
+      }
+      
+      // Clear backpressure and maybe increase FPS
+      if (bufferedAmount < BACKPRESSURE_THRESHOLD / 4) {
+        session.adaptiveFPS.backpressureCount = 0;
+        
+        if (now - session.adaptiveFPS.lastAdjust > 5000) {
+          const newFPS = Math.min(session.adaptiveFPS.max, session.adaptiveFPS.current + 1);
+          if (newFPS !== session.adaptiveFPS.current) {
+            session.adaptiveFPS.current = newFPS;
+            console.log(`📈 Increased FPS to ${newFPS} for session ${session.id}`);
+          }
+          session.adaptiveFPS.lastAdjust = now;
+        }
+      }
+      
+      // Take screenshot asynchronously
+      ssData.inProgress = true;
+      ssData.lastShot = now;
+      
+      (async () => {
+        try {
+          const response = await browserPool.sendCommand(session.browserId, {
+            cmd: 'requestScreenshot',
+            quality: CONFIG.SCREENSHOT_QUALITY
+          });
+          
+          if (response.screenshot && session.ws.readyState === session.ws.OPEN) {
+            session.ws.send(response.screenshot, { binary: true });
+          } else if (response.skipped && session.ws.readyState === session.ws.OPEN) {
+            session.ws.send(JSON.stringify({
+              type: 'status',
+              loading: true,
+              reason: response.reason,
+              message: response.reason === 'page_navigating' ? 'Page is loading...' :
+                      response.reason === 'page_not_ready' ? 'Waiting for page...' :
+                      'Processing...'
+            }));
+          }
+        } catch (error) {
+          // Silent fail
+        } finally {
+          ssData.inProgress = false;
+        }
+      })();
+    }
+  }
+  
+  // Start global screenshot pump with resource monitoring
+  setInterval(() => {
+    // Check memory pressure before running pump
+    const memUsage = process.memoryUsage();
+    const heapUsedPercent = (memUsage.heapUsed / memUsage.heapTotal) * 100;
+    
+    if (heapUsedPercent > 90) {
+      console.warn(`⚠️ High memory pressure (${heapUsedPercent.toFixed(1)}%), skipping screenshot pump`);
+      // Force garbage collection if available
+      if (global.gc) {
+        global.gc();
+      }
+      return;
+    }
+    
+    globalScreenshotPump();
+  }, 20); // Run at 50Hz to check all sessions
   
   // WebSocket connection handler
   wss.on('connection', async (ws) => {
@@ -687,8 +967,8 @@ async function startServer() {
           }
         });
         
-        // Process queue
-        processRequestQueue();
+        // Trigger global pump
+        globalRequestQueuePump();
         
       } catch (error) {
         console.error('Message handling error:', error);
@@ -699,152 +979,14 @@ async function startServer() {
       }
     });
     
-    // Process request queue
-    async function processRequestQueue() {
-      while (requestQueue.size() > 0) {
-        const request = requestQueue.getNext();
-        if (!request) break;
-        
-        const session = sessionManager.getSession(request.sessionId);
-        if (!session) continue;
-        
-        // Check if session is already processing
-        if (requestQueue.isProcessing(request.sessionId)) {
-          // Re-queue the request
-          requestQueue.add(request);
-          await new Promise(resolve => setTimeout(resolve, 50));
-          continue;
-        }
-        
-        requestQueue.setProcessing(request.sessionId, true);
-        
-        try {
-          // Check if browser exists, recreate if needed
-          if (!session.browserId || !browserPool.browserAssignments.has(session.browserId)) {
-            console.log(`Browser missing for session ${session.id}, creating new one...`);
-            try {
-              const { browserId } = await browserPool.assignBrowser(session.id);
-              session.browserId = browserId;
-              console.log(`New browser ${browserId} assigned to session ${session.id}`);
-            } catch (assignError) {
-              console.error(`Failed to recreate browser:`, assignError);
-              throw assignError;
-            }
-          }
-          
-          // Send command to browser worker
-          const response = await browserPool.sendCommand(
-            session.browserId,
-            request.command
-          );
-          
-          // Handle screenshot responses with priority mode
-          if (response.screenshot) {
-            if (CONFIG.SCREENSHOT_COMPRESSION) {
-              // Use worker for compression
-              screenshotWorker.addToQueue({
-                sessionId: session.id,
-                screenshot: response.screenshot,
-                timestamp: Date.now(),
-                skipCompression: false
-              });
-            } else {
-              // Direct send for minimal latency (2-3 users mode)
-              if (session.ws.readyState === ws.OPEN) {
-                session.ws.send(response.screenshot, { binary: true });
-              }
-            }
-            session.stats.screenshots++;
-          }
-          
-          // Send response to client
-          if (request.callback) {
-            await request.callback(response);
-          }
-          
-        } catch (error) {
-          console.error('Command execution error:', error);
-          session.stats.errors++;
-          
-          // If browser not found, mark session for browser recreation
-          if (error.message.includes('Browser') && error.message.includes('not found')) {
-            console.log(`Browser crashed for session ${session.id}, will recreate on next command`);
-            session.browserId = null;
-          }
-          
-          if (request.callback) {
-            await request.callback({
-              type: 'error',
-              message: error.message,
-              recoverable: error.message.includes('not found')
-            });
-          }
-        } finally {
-          requestQueue.setProcessing(request.sessionId, false);
-        }
-      }
-    }
-    
-    // Screenshot worker listener
-    screenshotWorker.on('screenshot', (data) => {
-      const session = sessionManager.getSession(data.sessionId);
-      if (session && session.ws.readyState === ws.OPEN) {
-        session.ws.send(data.processed, { binary: true });
-      }
-    });
-    
-    // Regular screenshot updates for smooth experience
-    let lastScreenshotTime = Date.now();
-    let screenshotInProgress = false;
-    
-    const screenshotInterval = setInterval(async () => {
-      if (ws.readyState !== ws.OPEN) {
-        clearInterval(screenshotInterval);
-        return;
-      }
-      
-      // Skip if previous screenshot still in progress
-      if (screenshotInProgress) {
-        return;
-      }
-      
-      const session = sessionManager.getSession(ws.sessionId);
-      if (session && session.browserId) {
-        screenshotInProgress = true;
-        try {
-          const response = await browserPool.sendCommand(session.browserId, {
-            cmd: 'requestScreenshot'
-          });
-          
-          // Handle screenshot response
-          if (response.screenshot && ws.readyState === ws.OPEN) {
-            ws.send(response.screenshot, { binary: true });
-            lastScreenshotTime = Date.now();
-          } else if (response.skipped) {
-            // Screenshot was skipped (page loading, etc)
-            // Send last screenshot if we have one and it's recent
-            if (Date.now() - lastScreenshotTime > 2000) {
-              // If no screenshot for 2+ seconds, send a loading indicator
-              if (ws.readyState === ws.OPEN) {
-                ws.send(JSON.stringify({
-                  type: 'loading',
-                  reason: response.reason
-                }));
-              }
-            }
-          }
-        } catch (error) {
-          // Silent fail for screenshot updates
-        } finally {
-          screenshotInProgress = false;
-        }
-      }
-    }, 1000 / CONFIG.TARGET_FPS);
+    // Clean up screenshot session data on disconnect
     
     // Cleanup on disconnect
     ws.on('close', async () => {
       console.log(`🔌 WebSocket disconnected for session ${ws.sessionId}`);
-      clearInterval(screenshotInterval);
+      
+      // Clean up screenshot session data
+      screenshotSessions.delete(ws.sessionId);
       
       const session = sessionManager.getSession(ws.sessionId);
       if (session && session.browserId) {
@@ -856,7 +998,7 @@ async function startServer() {
     
     ws.on('error', (error) => {
       console.error('WebSocket error:', error);
-      clearInterval(screenshotInterval);
+      screenshotSessions.delete(ws.sessionId);
     });
   });
   

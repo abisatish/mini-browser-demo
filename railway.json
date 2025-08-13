@@ -17,7 +17,7 @@
     "SCREENSHOT_QUALITY": "80",
     "BROWSER_WORKERS": "2",
     "BROWSERS_PER_WORKER": "2",
-    "NODE_OPTIONS": "--max-old-space-size=6144",
+    "NODE_OPTIONS": "--max-old-space-size=4096 --expose-gc",
     "SESSION_TIMEOUT": "1800000",
     "REQUEST_QUEUE_SIZE": "50",
     "WORKER_RESTART_DELAY": "3000",

@@ -81,10 +81,11 @@ async function createBrowser(sessionId) {
       headless: headless,
       args: [
         ...BROWSER_ARGS,
-        '--js-flags=--max-old-space-size=1024',  // 1GB heap limit for JavaScript
+        '--js-flags=--max-old-space-size=768',  // 768MB heap limit per browser (2 browsers = 1.5GB per worker)
         '--disable-dev-shm-usage',  // Already in BROWSER_ARGS but critical
         '--aggressive-cache-discard',
-        '--aggressive-tab-discard'
+        '--aggressive-tab-discard',
+        '--max-renderer-process-count=2'  // Limit renderer processes
       ],
       // Reduce resource usage
       chromiumSandbox: false,
@@ -235,6 +236,11 @@ async function executeBrowserCommand(browserId, command) {
         // Mark page as navigating to prevent screenshot errors
         pages.set(browserId + '_navigating', true);
         
+        // Send loading state immediately
+        response.loading = true;
+        response.url = command.url;
+        response.message = 'Navigating...';
+        
         // Log heavy pages for debugging
         const isHeavyPage = command.url.includes('linkedin.com/checkpoint') || 
                            command.url.includes('linkedin.com/login') ||
@@ -243,6 +249,7 @@ async function executeBrowserCommand(browserId, command) {
         
         if (isHeavyPage) {
           console.log(`[Worker ${workerId}] Navigating to heavy page: ${command.url}`);
+          response.message = 'Loading authentication page...';
         }
         
         try {
@@ -252,9 +259,15 @@ async function executeBrowserCommand(browserId, command) {
           });
           response.url = page.url();
           response.title = await page.title().catch(() => 'Loading...');
+          response.loading = false;
+          response.success = true;
           
           // Wait a bit for page to stabilize
           await page.waitForTimeout(500);
+        } catch (navError) {
+          console.error(`[Worker ${workerId}] Navigation error:`, navError.message);
+          response.error = navError.message;
+          response.loading = false;
         } finally {
           // Clear navigation flag
           pages.delete(browserId + '_navigating');
@@ -324,12 +337,15 @@ async function executeBrowserCommand(browserId, command) {
           break;
         }
         
-        // Take screenshot WITHOUT waiting for fonts or animations
+        // Take screenshot with FINAL quality (no recompression needed)
+        // ChatGPT optimization: Set JPEG quality at capture time
+        const quality = command.quality || 80;  // Use passed quality or default
+        
         try {
           const screenshot = await Promise.race([
             page.screenshot({
               type: 'jpeg',
-              quality: 70,
+              quality: quality,  // Final quality - no further compression needed
               fullPage: false,
               clip: { x: 0, y: 0, width: 1280, height: 720 },
               animations: 'allow', // Don't wait for animations to finish
@@ -342,6 +358,7 @@ async function executeBrowserCommand(browserId, command) {
           
           if (screenshot) {
             response.screenshot = screenshot;
+            response.compressed = true;  // Flag that this is already at final quality
             stats.screenshotsGenerated++;
           } else {
             response.skipped = true;
@@ -398,10 +415,31 @@ async function handleBrowserError(browserId, error) {
   }
 }
 
-// Report worker stats periodically
+// Report worker stats periodically with memory monitoring
 setInterval(() => {
   const now = Date.now();
   const load = browserCount / maxBrowsers;
+  const memUsage = process.memoryUsage();
+  const heapUsedMB = memUsage.heapUsed / 1024 / 1024;
+  const heapPercent = (memUsage.heapUsed / memUsage.heapTotal) * 100;
+  
+  // ChatGPT optimization: Monitor memory and auto-cleanup if needed
+  if (heapPercent > 85) {
+    console.warn(`[Worker ${workerId}] High memory usage: ${heapUsedMB.toFixed(1)}MB (${heapPercent.toFixed(1)}%)`);
+    
+    // Force garbage collection if available
+    if (global.gc) {
+      global.gc();
+      console.log(`[Worker ${workerId}] Forced garbage collection`);
+    }
+    
+    // If still high, consider closing idle browsers
+    if (heapPercent > 90 && browsers.size > 0) {
+      console.error(`[Worker ${workerId}] Critical memory - closing oldest browser`);
+      const oldestBrowser = browsers.keys().next().value;
+      closeBrowser(oldestBrowser).catch(() => {});
+    }
+  }
   
   parentPort.postMessage({
     type: 'workerStats',
@@ -410,6 +448,10 @@ setInterval(() => {
       browsers: browserCount,
       maxBrowsers,
       load,
+      memory: {
+        heapUsedMB: heapUsedMB.toFixed(1),
+        heapPercent: heapPercent.toFixed(1)
+      },
       ...stats
     },
     timestamp: now
