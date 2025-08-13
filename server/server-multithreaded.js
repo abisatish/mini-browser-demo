@@ -19,7 +19,7 @@ const __dirname = path.dirname(__filename);
 const CONFIG = {
   MAX_CONCURRENT_USERS: parseInt(process.env.MAX_USERS) || 3,
   BROWSER_WORKERS: parseInt(process.env.BROWSER_WORKERS) || 2, // 2 workers
-  BROWSERS_PER_WORKER: parseInt(process.env.BROWSERS_PER_WORKER) || 2, // 2 browsers per worker (like old working code)
+  BROWSERS_PER_WORKER: parseInt(process.env.BROWSERS_PER_WORKER) || 1, // 1 browser per worker for stability
   SCREENSHOT_QUALITY: parseInt(process.env.SCREENSHOT_QUALITY) || 80,
   TARGET_FPS: parseInt(process.env.TARGET_FPS) || 15, // Back to 15 FPS
   REQUEST_QUEUE_SIZE: parseInt(process.env.REQUEST_QUEUE_SIZE) || 50,
@@ -273,12 +273,17 @@ class BrowserWorkerPool extends EventEmitter {
         if (state) {
           state.load = msg.stats?.load || msg.load || 0;
           state.lastHealthCheck = Date.now();
+          state.memory = msg.stats?.memory;
           // Mark worker as ready if it's sending stats
           if (state.status !== 'ready') {
             state.status = 'ready';
             console.log(`✅ Worker ${workerId} is now ready (via stats)`);
           }
         }
+        break;
+        
+      case 'browserRecovered':
+        console.log(`✅ Browser ${msg.browserId} recovered on worker ${workerId}`);
         break;
         
       case 'response':

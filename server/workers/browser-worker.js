@@ -81,11 +81,13 @@ async function createBrowser(sessionId) {
       headless: headless,
       args: [
         ...BROWSER_ARGS,
-        '--js-flags=--max-old-space-size=768',  // 768MB heap limit per browser (2 browsers = 1.5GB per worker)
+        '--js-flags=--max-old-space-size=512',  // Reduced to 512MB per browser
         '--disable-dev-shm-usage',  // Already in BROWSER_ARGS but critical
         '--aggressive-cache-discard',
         '--aggressive-tab-discard',
-        '--max-renderer-process-count=2'  // Limit renderer processes
+        '--max-renderer-process-count=1',  // Only 1 renderer process per browser
+        '--memory-pressure-off',  // Disable memory pressure reporting
+        '--max_old_space_size=512'  // Additional memory limit
       ],
       // Reduce resource usage
       chromiumSandbox: false,
@@ -135,10 +137,16 @@ async function createBrowser(sessionId) {
     page.on('crash', async () => {
       console.error(`[Worker ${workerId}] Page crashed for browser ${browserId}, attempting recovery...`);
       
+      // Mark browser as crashed to prevent screenshot attempts
+      pages.set(browserId + '_crashed', true);
+      
       // Try to recreate the page
       try {
         // Close the crashed page
         await page.close().catch(() => {});
+        
+        // Wait a bit for memory to be freed
+        await new Promise(resolve => setTimeout(resolve, 1000));
         
         // Create a new page
         const newPage = await context.newPage();
@@ -147,13 +155,30 @@ async function createBrowser(sessionId) {
         // Re-setup crash handler
         newPage.on('crash', () => {
           console.error(`[Worker ${workerId}] Page crashed again for browser ${browserId}`);
-          handleBrowserError(browserId, new Error('Page crashed repeatedly'));
+          pages.set(browserId + '_crashed', true);
+          // Don't try to recover again, let main thread handle it
+        });
+        
+        newPage.on('pageerror', (error) => {
+          if (error.message.includes('ERR_') || error.message.includes('net::')) {
+            console.log(`[Worker ${workerId}] Network error on ${browserId}: ${error.message}`);
+          }
         });
         
         // Navigate to a safe page
         await newPage.goto('about:blank', { timeout: 5000 }).catch(() => {});
         
+        // Clear crashed flag
+        pages.delete(browserId + '_crashed');
+        
         console.log(`[Worker ${workerId}] Page recovered for browser ${browserId}`);
+        
+        // Notify main thread of recovery
+        parentPort.postMessage({
+          type: 'browserRecovered',
+          browserId,
+          workerId
+        });
       } catch (error) {
         console.error(`[Worker ${workerId}] Failed to recover page:`, error);
         handleBrowserError(browserId, new Error('Page crash unrecoverable'));
@@ -315,10 +340,10 @@ async function executeBrowserCommand(browserId, command) {
         break;
         
       case 'requestScreenshot':
-        // SKIP screenshots entirely during navigation
-        if (pages.has(browserId + '_navigating')) {
+        // SKIP screenshots entirely during navigation or if crashed
+        if (pages.has(browserId + '_navigating') || pages.has(browserId + '_crashed')) {
           response.skipped = true;
-          response.reason = 'page_navigating';
+          response.reason = pages.has(browserId + '_crashed') ? 'page_crashed' : 'page_navigating';
           break;
         }
         
