@@ -448,16 +448,14 @@ setInterval(() => {
   const heapUsedMB = memUsage.heapUsed / 1024 / 1024;
   const heapPercent = (memUsage.heapUsed / memUsage.heapTotal) * 100;
   
-  // ChatGPT optimization: Monitor memory and auto-cleanup if needed
-  if (heapPercent > 85) {
-    console.warn(`[Worker ${workerId}] High memory usage: ${heapUsedMB.toFixed(1)}MB (${heapPercent.toFixed(1)}%)`);
+  // Only warn if actual memory usage is high (not percentage)
+  // Workers have small heaps by default, so percentage is misleading
+  if (heapUsedMB > 500) {  // Warn at 500MB actual usage
+    console.warn(`[Worker ${workerId}] High memory usage: ${heapUsedMB.toFixed(1)}MB`);
     
-    // Note: Manual GC not available without --expose-gc flag
-    // which can't be set in NODE_OPTIONS
-    
-    // If still high, consider closing idle browsers
-    if (heapPercent > 90 && browsers.size > 0) {
-      console.error(`[Worker ${workerId}] Critical memory - closing oldest browser`);
+    // If extremely high, consider closing idle browsers
+    if (heapUsedMB > 750 && browsers.size > 0) {
+      console.error(`[Worker ${workerId}] Critical memory (${heapUsedMB.toFixed(0)}MB) - closing oldest browser`);
       const oldestBrowser = browsers.keys().next().value;
       closeBrowser(oldestBrowser).catch(() => {});
     }

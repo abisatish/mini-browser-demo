@@ -187,6 +187,11 @@ class BrowserWorkerPool extends EventEmitter {
         workerId,
         maxBrowsers: CONFIG.BROWSERS_PER_WORKER,
         headless: true
+      },
+      // Give workers more heap space (1GB each)
+      resourceLimits: {
+        maxOldGenerationSizeMb: 1024,
+        maxYoungGenerationSizeMb: 256
       }
     });
 
@@ -889,13 +894,13 @@ async function startServer() {
   
   // Start global screenshot pump with resource monitoring
   setInterval(() => {
-    // Check memory pressure before running pump
+    // Check actual memory usage (not heap percentage which can be misleading)
     const memUsage = process.memoryUsage();
-    const heapUsedPercent = (memUsage.heapUsed / memUsage.heapTotal) * 100;
+    const heapUsedMB = memUsage.heapUsed / 1024 / 1024;
     
-    if (heapUsedPercent > 90) {
-      console.warn(`⚠️ High memory pressure (${heapUsedPercent.toFixed(1)}%), skipping screenshot pump`);
-      // Note: Manual GC not available without --expose-gc flag
+    // Only skip if we're using more than 2GB of heap (plenty of headroom on 8GB server)
+    if (heapUsedMB > 2048) {
+      console.warn(`⚠️ High memory usage (${heapUsedMB.toFixed(0)}MB), skipping screenshot pump`);
       return;
     }
     
