@@ -114,23 +114,27 @@ async function createBrowser(sessionId) {
     });
     
     // OPTIMIZATION #5: Block heavy resources (video/streaming/analytics)
-    await context.route('**/*', (route, request) => {
-      const type = request.resourceType();
-      const url = request.url();
-      
-      // Kill video/audio streams and very large files
-      if (type === 'media' || url.endsWith('.mp4') || url.endsWith('.m3u8') || url.endsWith('.webm')) {
-        return route.abort();
-      }
-      
-      // Block heavy trackers/ads that hurt FPS
-      if (url.includes('doubleclick.net') || url.includes('googletagmanager.com') || 
-          url.includes('google-analytics.com') || url.includes('facebook.com/tr')) {
-        return route.abort();
-      }
-      
-      return route.continue();
-    });
+    try {
+      await context.route('**/*', (route, request) => {
+        const type = request.resourceType();
+        const url = request.url();
+        
+        // Kill video/audio streams and very large files
+        if (type === 'media' || url.endsWith('.mp4') || url.endsWith('.m3u8') || url.endsWith('.webm')) {
+          return route.abort();
+        }
+        
+        // Block heavy trackers/ads that hurt FPS
+        if (url.includes('doubleclick.net') || url.includes('googletagmanager.com') || 
+            url.includes('google-analytics.com') || url.includes('facebook.com/tr')) {
+          return route.abort();
+        }
+        
+        return route.continue();
+      });
+    } catch (routeError) {
+      console.log(`[Worker ${workerId}] Route setup error (non-fatal):`, routeError.message);
+    }
     
     // Add stealth scripts
     await context.addInitScript(() => {
@@ -156,20 +160,28 @@ async function createBrowser(sessionId) {
     const page = await context.newPage();
     
     // OPTIMIZATION #5: Disable animations and transitions for better performance
-    await page.addStyleTag({ 
-      content: `
-        * { 
-          animation: none !important; 
-          transition: none !important; 
-        }
-        video, canvas { 
-          filter: opacity(0.9999); /* pause heavy paints without blanking */
-        }
-      `
-    });
+    try {
+      await page.addStyleTag({ 
+        content: `
+          * { 
+            animation: none !important; 
+            transition: none !important; 
+          }
+          video, canvas { 
+            filter: opacity(0.9999); /* pause heavy paints without blanking */
+          }
+        `
+      });
+    } catch (styleError) {
+      console.log(`[Worker ${workerId}] Style injection error (non-fatal):`, styleError.message);
+    }
     
     // OPTIMIZATION #6: Ensure viewport is 720p
-    await page.setViewportSize({ width: 1280, height: 720 });
+    try {
+      await page.setViewportSize({ width: 1280, height: 720 });
+    } catch (viewportError) {
+      console.log(`[Worker ${workerId}] Viewport error (non-fatal):`, viewportError.message);
+    }
     
     // Set up error handling with auto-recovery
     page.on('crash', async () => {

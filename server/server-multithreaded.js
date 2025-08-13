@@ -149,7 +149,7 @@ class BrowserWorkerPool extends EventEmitter {
     
     // Wait a bit for workers to send their first stats
     console.log('⏳ Waiting for workers to become ready...');
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    await new Promise(resolve => setTimeout(resolve, 5000));  // Increased timeout for Railway
     
     // Check if any workers were created
     const readyWorkers = Array.from(this.workerStates.values()).filter(w => w.status === 'ready').length;
