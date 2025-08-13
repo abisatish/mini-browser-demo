@@ -890,10 +890,7 @@ async function startServer() {
     
     if (heapUsedPercent > 90) {
       console.warn(`⚠️ High memory pressure (${heapUsedPercent.toFixed(1)}%), skipping screenshot pump`);
-      // Force garbage collection if available
-      if (global.gc) {
-        global.gc();
-      }
+      // Note: Manual GC not available without --expose-gc flag
       return;
     }
     

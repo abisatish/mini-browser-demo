@@ -427,11 +427,8 @@ setInterval(() => {
   if (heapPercent > 85) {
     console.warn(`[Worker ${workerId}] High memory usage: ${heapUsedMB.toFixed(1)}MB (${heapPercent.toFixed(1)}%)`);
     
-    // Force garbage collection if available
-    if (global.gc) {
-      global.gc();
-      console.log(`[Worker ${workerId}] Forced garbage collection`);
-    }
+    // Note: Manual GC not available without --expose-gc flag
+    // which can't be set in NODE_OPTIONS
     
     // If still high, consider closing idle browsers
     if (heapPercent > 90 && browsers.size > 0) {
