@@ -762,14 +762,9 @@ async function startServer() {
             request.command
           );
           
-          // Handle screenshot responses
+          // Handle screenshot responses - always send
           if (response.screenshot && response.compressed) {
-            // OPTIMIZATION #3: Drop frames when socket is full
-            const SOFT_LIMIT = 2 * 1024 * 1024; // 2MB
-            if (session.ws.bufferedAmount > SOFT_LIMIT) {
-              session.stats.droppedFrames++;
-              // Skip this frame - next tick will try again
-            } else if (session.ws.readyState === session.ws.OPEN) {
+            if (session.ws.readyState === session.ws.OPEN) {
               // Direct send - already compressed by browser worker
               session.ws.send(response.screenshot, { binary: true, compress: false });
               session.stats.screenshots++;
@@ -860,31 +855,26 @@ async function startServer() {
         continue;
       }
       
-      // OPTIMIZATION #8: Make adaptive FPS react faster
+      // Only adjust FPS based on network backpressure, not memory/load
       const bufferedAmount = session.ws.bufferedAmount || 0;
-      const workerState = browserPool.workerStates.get(browserPool.browserAssignments.get(session.browserId));
-      const workerLoad = workerState?.load || 0;
-      const queueLength = requestQueue.size();
       
-      // Fast decrease when under pressure
-      if (bufferedAmount > 256 * 1024 || workerLoad > 0.85 || queueLength > 5) {
-        // Drop FPS by 5 immediately
-        const newFPS = Math.max(session.adaptiveFPS.min, session.adaptiveFPS.current - 5);
+      // Only throttle if network is actually backed up
+      if (bufferedAmount > 512 * 1024) {  // 512KB buffer
+        const newFPS = Math.max(session.adaptiveFPS.min, session.adaptiveFPS.current - 2);
         if (newFPS !== session.adaptiveFPS.current) {
           session.adaptiveFPS.current = newFPS;
-          console.log(`⚡ Fast FPS drop to ${newFPS} for session ${session.id} (buffer: ${(bufferedAmount/1024).toFixed(0)}KB, load: ${workerLoad.toFixed(2)})`);
+          console.log(`📉 Network backpressure - FPS to ${newFPS} for session ${session.id} (buffer: ${(bufferedAmount/1024).toFixed(0)}KB)`);
         }
         session.adaptiveFPS.lastAdjust = now;
-        continue; // Skip this frame
       }
       
-      // Slow increase only when everything is good for 5 seconds
-      if (bufferedAmount < 64 * 1024 && workerLoad < 0.5 && queueLength < 2) {
-        if (!session.adaptiveFPS.isIdle && now - session.adaptiveFPS.lastAdjust > 5000) {
+      // Increase FPS when network is clear and not idle
+      if (bufferedAmount < 128 * 1024 && !session.adaptiveFPS.isIdle) {
+        if (now - session.adaptiveFPS.lastAdjust > 3000) {
           const newFPS = Math.min(session.adaptiveFPS.max, session.adaptiveFPS.current + 1);
           if (newFPS !== session.adaptiveFPS.current) {
             session.adaptiveFPS.current = newFPS;
-            console.log(`📈 Slow FPS increase to ${newFPS} for session ${session.id}`);
+            console.log(`📈 Network clear - FPS to ${newFPS} for session ${session.id}`);
           }
           session.adaptiveFPS.lastAdjust = now;
         }
@@ -903,13 +893,8 @@ async function startServer() {
           });
           
           if (response.screenshot && session.ws.readyState === session.ws.OPEN) {
-            // OPTIMIZATION #3: Drop frames when socket is full
-            const SOFT_LIMIT = 2 * 1024 * 1024; // 2MB
-            if (session.ws.bufferedAmount > SOFT_LIMIT) {
-              session.stats.droppedFrames++;
-            } else {
-              session.ws.send(response.screenshot, { binary: true, compress: false });
-            }
+            // Always send screenshots
+            session.ws.send(response.screenshot, { binary: true, compress: false });
           } else if (response.skipped && session.ws.readyState === session.ws.OPEN) {
             session.ws.send(JSON.stringify({
               type: 'status',
@@ -929,18 +914,8 @@ async function startServer() {
     }
   }
   
-  // Start global screenshot pump with resource monitoring
+  // Start global screenshot pump - no memory checks, just run it
   setInterval(() => {
-    // Check actual memory usage (not heap percentage which can be misleading)
-    const memUsage = process.memoryUsage();
-    const heapUsedMB = memUsage.heapUsed / 1024 / 1024;
-    
-    // Only skip if we're using more than 2GB of heap (plenty of headroom on 8GB server)
-    if (heapUsedMB > 2048) {
-      console.warn(`⚠️ High memory usage (${heapUsedMB.toFixed(0)}MB), skipping screenshot pump`);
-      return;
-    }
-    
     globalScreenshotPump();
   }, 20); // Run at 50Hz to check all sessions
   

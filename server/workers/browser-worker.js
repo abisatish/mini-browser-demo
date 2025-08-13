@@ -328,12 +328,17 @@ async function executeBrowserCommand(browserId, command) {
         }
         
         try {
+          console.log(`[Worker ${workerId}] Starting navigation to: ${command.url}`);
           await page.goto(command.url, { 
             waitUntil: 'domcontentloaded',
             timeout: 15000 
           });
-          response.url = page.url();
-          response.title = await page.title().catch(() => 'Loading...');
+          const finalUrl = page.url();
+          const title = await page.title().catch(() => 'Loading...');
+          console.log(`[Worker ${workerId}] Navigation completed - URL: ${finalUrl}, Title: ${title}`);
+          
+          response.url = finalUrl;
+          response.title = title;
           response.loading = false;
           response.success = true;
           
@@ -341,11 +346,13 @@ async function executeBrowserCommand(browserId, command) {
           await page.waitForTimeout(500);
         } catch (navError) {
           console.error(`[Worker ${workerId}] Navigation error:`, navError.message);
+          console.error(`[Worker ${workerId}] Failed URL was: ${command.url}`);
           response.error = navError.message;
           response.loading = false;
         } finally {
           // Clear navigation flag
           pages.delete(browserId + '_navigating');
+          console.log(`[Worker ${workerId}] Navigation flag cleared for browser ${browserId}`);
         }
         break;
         
@@ -486,12 +493,8 @@ setInterval(() => {
   const heapUsedMB = memUsage.heapUsed / 1024 / 1024;
   const heapPercent = (memUsage.heapUsed / memUsage.heapTotal) * 100;
   
-  // Only warn if actual memory usage is high
-  // With 1GB worker heap limit, warn at 800MB
-  if (heapUsedMB > 800) {  // Warn at 800MB actual usage
-    console.warn(`[Worker ${workerId}] High memory usage: ${heapUsedMB.toFixed(1)}MB`);
-    // Removed automatic browser closing - let the system handle memory pressure naturally
-  }
+  // Don't warn about memory - let it run freely
+  // Memory management is handled by the OS and Node.js
   
   parentPort.postMessage({
     type: 'workerStats',
