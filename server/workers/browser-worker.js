@@ -81,13 +81,10 @@ async function createBrowser(sessionId) {
       headless: headless,
       args: [
         ...BROWSER_ARGS,
-        '--js-flags=--max-old-space-size=512',  // Reduced to 512MB per browser
-        '--disable-dev-shm-usage',  // Already in BROWSER_ARGS but critical
-        '--aggressive-cache-discard',
-        '--aggressive-tab-discard',
-        '--max-renderer-process-count=1',  // Only 1 renderer process per browser
-        '--memory-pressure-off',  // Disable memory pressure reporting
-        '--max_old_space_size=512'  // Additional memory limit
+        '--disable-dev-shm-usage',  // Critical for Docker
+        '--max-renderer-process-count=2',  // Allow 2 renderer processes
+        '--memory-pressure-off'  // Disable memory pressure reporting
+        // Removed memory limits - let Chrome manage its own memory
       ],
       // Reduce resource usage
       chromiumSandbox: false,
@@ -448,17 +445,11 @@ setInterval(() => {
   const heapUsedMB = memUsage.heapUsed / 1024 / 1024;
   const heapPercent = (memUsage.heapUsed / memUsage.heapTotal) * 100;
   
-  // Only warn if actual memory usage is high (not percentage)
-  // Workers have small heaps by default, so percentage is misleading
-  if (heapUsedMB > 500) {  // Warn at 500MB actual usage
+  // Only warn if actual memory usage is high
+  // With 1GB worker heap limit, warn at 800MB
+  if (heapUsedMB > 800) {  // Warn at 800MB actual usage
     console.warn(`[Worker ${workerId}] High memory usage: ${heapUsedMB.toFixed(1)}MB`);
-    
-    // If extremely high, consider closing idle browsers
-    if (heapUsedMB > 750 && browsers.size > 0) {
-      console.error(`[Worker ${workerId}] Critical memory (${heapUsedMB.toFixed(0)}MB) - closing oldest browser`);
-      const oldestBrowser = browsers.keys().next().value;
-      closeBrowser(oldestBrowser).catch(() => {});
-    }
+    // Removed automatic browser closing - let the system handle memory pressure naturally
   }
   
   parentPort.postMessage({
