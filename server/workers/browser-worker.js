@@ -23,6 +23,7 @@ console.log(`[Worker ${workerId}] Browser worker starting with config:`, { worke
 const browsers = new Map();
 const contexts = new Map();
 const pages = new Map();
+const lastScreenshots = new Map(); // Store last screenshot hash for comparison
 let browserCount = 0;
 
 // Performance monitoring
@@ -363,24 +364,38 @@ async function executeBrowserCommand(browserId, command) {
         // ChatGPT optimization: Set JPEG quality at capture time
         const quality = command.quality || 80;  // Use passed quality or default
         
+        // Smart screenshot: Lower quality for idle sessions
+        const adaptiveQuality = command.isIdle ? 60 : quality;
+        
         try {
           const screenshot = await Promise.race([
             page.screenshot({
               type: 'jpeg',
-              quality: quality,  // Final quality - no further compression needed
+              quality: adaptiveQuality,  // Adaptive quality based on activity
               fullPage: false,
               clip: { x: 0, y: 0, width: 1280, height: 720 },
               animations: 'allow', // Don't wait for animations to finish
-              timeout: 300  // Even shorter timeout
+              timeout: command.isIdle ? 500 : 300  // Longer timeout for idle (less urgent)
             }),
             new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Screenshot timeout')), 350)
+              setTimeout(() => reject(new Error('Screenshot timeout')), command.isIdle ? 550 : 350)
             )
           ]).catch(() => null);
           
           if (screenshot) {
+            // Simple change detection: compare screenshot size
+            const lastSize = lastScreenshots.get(browserId);
+            const currentSize = screenshot.length;
+            
+            // If size is very similar (within 5%), might be unchanged
+            if (lastSize && Math.abs(currentSize - lastSize) / lastSize < 0.05) {
+              response.possiblyUnchanged = true;
+            }
+            
+            lastScreenshots.set(browserId, currentSize);
             response.screenshot = screenshot;
             response.compressed = true;  // Flag that this is already at final quality
+            response.quality = adaptiveQuality;
             stats.screenshotsGenerated++;
           } else {
             response.skipped = true;

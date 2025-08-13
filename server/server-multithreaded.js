@@ -62,10 +62,13 @@ class SessionManager extends EventEmitter {
       // Adaptive FPS tracking
       adaptiveFPS: {
         current: CONFIG.TARGET_FPS,
-        min: 5,
+        min: 2,  // Lower minimum for idle
         max: CONFIG.TARGET_FPS,
         lastAdjust: Date.now(),
-        backpressureCount: 0
+        backpressureCount: 0,
+        lastActivity: Date.now(),
+        idleTimeout: 3000,  // 3 seconds to idle
+        isIdle: false
       }
     };
     
@@ -819,6 +822,15 @@ async function startServer() {
       
       const now = Date.now();
       
+      // Check if session is idle
+      const timeSinceActivity = now - session.adaptiveFPS.lastActivity;
+      if (timeSinceActivity > session.adaptiveFPS.idleTimeout && !session.adaptiveFPS.isIdle) {
+        session.adaptiveFPS.isIdle = true;
+        // Drop to minimum FPS when idle
+        session.adaptiveFPS.current = session.adaptiveFPS.min;
+        console.log(`😴 Session ${session.id} idle - FPS reduced to ${session.adaptiveFPS.current}`);
+      }
+      
       // Update frame interval based on adaptive FPS
       ssData.frameInterval = 1000 / session.adaptiveFPS.current;
       
@@ -846,11 +858,12 @@ async function startServer() {
         continue;
       }
       
-      // Clear backpressure and maybe increase FPS
+      // Clear backpressure and maybe increase FPS (only if not idle)
       if (bufferedAmount < BACKPRESSURE_THRESHOLD / 4) {
         session.adaptiveFPS.backpressureCount = 0;
         
-        if (now - session.adaptiveFPS.lastAdjust > 5000) {
+        // Only increase FPS if session is active
+        if (!session.adaptiveFPS.isIdle && now - session.adaptiveFPS.lastAdjust > 5000) {
           const newFPS = Math.min(session.adaptiveFPS.max, session.adaptiveFPS.current + 1);
           if (newFPS !== session.adaptiveFPS.current) {
             session.adaptiveFPS.current = newFPS;
@@ -868,7 +881,8 @@ async function startServer() {
         try {
           const response = await browserPool.sendCommand(session.browserId, {
             cmd: 'requestScreenshot',
-            quality: CONFIG.SCREENSHOT_QUALITY
+            quality: CONFIG.SCREENSHOT_QUALITY,
+            isIdle: session.adaptiveFPS.isIdle
           });
           
           if (response.screenshot && session.ws.readyState === session.ws.OPEN) {
@@ -962,6 +976,17 @@ async function startServer() {
         }
         
         session.stats.commands++;
+        
+        // Mark session as active (boost FPS)
+        if (message.cmd === 'click' || message.cmd === 'type' || message.cmd === 'scroll' || message.cmd === 'nav') {
+          session.adaptiveFPS.lastActivity = Date.now();
+          if (session.adaptiveFPS.isIdle) {
+            session.adaptiveFPS.isIdle = false;
+            // Boost FPS back to normal when user interacts
+            session.adaptiveFPS.current = Math.min(session.adaptiveFPS.max, 10);
+            console.log(`🚀 Session ${session.id} active - FPS boosted to ${session.adaptiveFPS.current}`);
+          }
+        }
         
         // Add to request queue
         requestQueue.add({
