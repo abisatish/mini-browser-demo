@@ -15,7 +15,7 @@
     "MAX_USERS": "3",
     "TARGET_FPS": "15",
     "SCREENSHOT_QUALITY": "80",
-    "BROWSER_WORKERS": "2",
+    "BROWSER_WORKERS": "3",
     "BROWSERS_PER_WORKER": "1",
     "NODE_OPTIONS": "--max-old-space-size=4096",
     "SESSION_TIMEOUT": "1800000",

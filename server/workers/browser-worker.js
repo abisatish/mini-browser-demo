@@ -63,7 +63,9 @@ const BROWSER_ARGS = [
   '--disable-breakpad',  // No crash reporting
   '--disable-domain-reliability',  // Less network overhead
   '--disable-sync',  // No sync needed
-  '--no-pings'  // No telemetry
+  '--no-pings',  // No telemetry
+  '--use-fake-ui-for-media-stream',  // Prevent media permission dialogs
+  '--use-fake-device-for-media-stream'  // Prevent device access issues
 ];
 
 // Create a new browser instance

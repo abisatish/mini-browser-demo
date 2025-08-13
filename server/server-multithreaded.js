@@ -18,7 +18,7 @@ const __dirname = path.dirname(__filename);
 // Configuration optimized for Railway (8 vCPUs, 8GB RAM) - 2-3 users
 const CONFIG = {
   MAX_CONCURRENT_USERS: parseInt(process.env.MAX_USERS) || 3,
-  BROWSER_WORKERS: parseInt(process.env.BROWSER_WORKERS) || 2, // 2 workers
+  BROWSER_WORKERS: parseInt(process.env.BROWSER_WORKERS) || 3, // Match max users for true isolation
   BROWSERS_PER_WORKER: parseInt(process.env.BROWSERS_PER_WORKER) || 1, // 1 browser per worker for stability
   SCREENSHOT_QUALITY: parseInt(process.env.SCREENSHOT_QUALITY) || 80,
   TARGET_FPS: parseInt(process.env.TARGET_FPS) || 15, // Back to 15 FPS
@@ -401,14 +401,26 @@ class BrowserWorkerPool extends EventEmitter {
   }
 
   async assignBrowser(sessionId) {
-    // Find worker with lowest load
+    // Find worker with NO browsers first (true isolation)
     let selectedWorker = null;
-    let minLoad = Infinity;
     
+    // First pass: find completely empty worker
     for (const [workerId, state] of this.workerStates) {
-      if (state.status === 'ready' && state.load < minLoad) {
-        minLoad = state.load;
+      if (state.status === 'ready' && state.browsers.size === 0) {
         selectedWorker = workerId;
+        console.log(`📎 Assigning session ${sessionId} to empty worker ${workerId}`);
+        break;
+      }
+    }
+    
+    // Second pass: find worker with lowest load if no empty workers
+    if (selectedWorker === null) {
+      let minLoad = Infinity;
+      for (const [workerId, state] of this.workerStates) {
+        if (state.status === 'ready' && state.load < minLoad) {
+          minLoad = state.load;
+          selectedWorker = workerId;
+        }
       }
     }
     
