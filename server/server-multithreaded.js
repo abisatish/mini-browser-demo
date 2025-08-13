@@ -15,14 +15,14 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Configuration optimized for Railway (8 vCPUs, 8GB RAM) - 2-3 users
+// Configuration optimized for m7a.2xlarge (8 vCPUs, 32GB RAM) - 10-12 users
 const CONFIG = {
-  MAX_CONCURRENT_USERS: parseInt(process.env.MAX_USERS) || 3,
-  BROWSER_WORKERS: parseInt(process.env.BROWSER_WORKERS) || 3, // Match max users for true isolation
-  BROWSERS_PER_WORKER: parseInt(process.env.BROWSERS_PER_WORKER) || 1, // 1 browser per worker for stability
+  MAX_CONCURRENT_USERS: parseInt(process.env.MAX_USERS) || 10,  // Increased from 3 to 10
+  BROWSER_WORKERS: parseInt(process.env.BROWSER_WORKERS) || 6,  // Increased from 3 to 6
+  BROWSERS_PER_WORKER: parseInt(process.env.BROWSERS_PER_WORKER) || 2, // Increased from 1 to 2
   SCREENSHOT_QUALITY: parseInt(process.env.SCREENSHOT_QUALITY) || 75,  // 75 is sweet spot for JPEG
   TARGET_FPS: parseInt(process.env.TARGET_FPS) || 12, // 12 FPS is smoother with less CPU
-  REQUEST_QUEUE_SIZE: parseInt(process.env.REQUEST_QUEUE_SIZE) || 50,
+  REQUEST_QUEUE_SIZE: parseInt(process.env.REQUEST_QUEUE_SIZE) || 100, // Increased from 50 to 100
   SESSION_TIMEOUT: parseInt(process.env.SESSION_TIMEOUT) || 30 * 60 * 1000,
   WORKER_RESTART_DELAY: parseInt(process.env.WORKER_RESTART_DELAY) || 3000,
   MAX_RETRIES: 3,
@@ -191,10 +191,10 @@ class BrowserWorkerPool extends EventEmitter {
         maxBrowsers: CONFIG.BROWSERS_PER_WORKER,
         headless: true
       },
-      // Give workers more heap space (1GB each)
+      // Give workers more heap space (3GB each for 32GB RAM system)
       resourceLimits: {
-        maxOldGenerationSizeMb: 1024,
-        maxYoungGenerationSizeMb: 256
+        maxOldGenerationSizeMb: 3072,  // Increased from 1GB to 3GB
+        maxYoungGenerationSizeMb: 512  // Increased from 256MB to 512MB
       }
     });
 

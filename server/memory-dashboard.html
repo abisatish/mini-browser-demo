@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memory Monitor Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            padding: 20px;
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #4fbdba;
+        }
+        
+        .dashboard {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+        }
+        
+        .card {
+            background: #16213e;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        
+        .card h2 {
+            color: #7ec8e3;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+        
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #2a2a4e;
+        }
+        
+        .metric:last-child {
+            border-bottom: none;
+        }
+        
+        .metric-label {
+            color: #aaa;
+        }
+        
+        .metric-value {
+            font-weight: bold;
+            color: #4fbdba;
+        }
+        
+        .process-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .process {
+            background: #0f1729;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            font-size: 0.9em;
+        }
+        
+        .process-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+        
+        .process-type {
+            background: #7ec8e3;
+            color: #0f1729;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 0.8em;
+        }
+        
+        .refresh-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #4fbdba;
+            color: #0f1729;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        
+        .refresh-btn:hover {
+            background: #7ec8e3;
+            transform: scale(1.05);
+        }
+        
+        .timestamp {
+            text-align: center;
+            color: #666;
+            margin-top: 20px;
+        }
+        
+        .warning {
+            background: #ff6b6b;
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .good {
+            color: #51cf66;
+        }
+        
+        .warning-text {
+            color: #ffd43b;
+        }
+        
+        .danger {
+            color: #ff6b6b;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Memory Monitor Dashboard</h1>
+    
+    <div id="warning" class="warning" style="display: none;"></div>
+    
+    <div class="dashboard">
+        <div class="card">
+            <h2>💻 System Memory</h2>
+            <div id="system-memory">
+                <div class="metric">
+                    <span class="metric-label">Loading...</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>🟢 Node.js Process</h2>
+            <div id="node-memory">
+                <div class="metric">
+                    <span class="metric-label">Loading...</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>🌐 Chromium Processes</h2>
+            <div id="chromium-summary">
+                <div class="metric">
+                    <span class="metric-label">Loading...</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>📊 Top Chromium Processes</h2>
+            <div id="chromium-processes" class="process-list">
+                <div class="metric">
+                    <span class="metric-label">Loading...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="timestamp" id="timestamp"></div>
+    
+    <button class="refresh-btn" onclick="fetchMemoryData()">🔄 Refresh</button>
+    
+    <script>
+        async function fetchMemoryData() {
+            try {
+                const response = await fetch('/api/memory');
+                const data = await response.json();
+                
+                updateSystemMemory(data.system);
+                updateNodeMemory(data.nodeProcess);
+                updateChromiumProcesses(data.chromiumProcesses);
+                updateTimestamp(data.timestamp);
+                checkWarnings(data);
+                
+            } catch (error) {
+                console.error('Error fetching memory data:', error);
+                document.getElementById('warning').textContent = 'Error fetching memory data';
+                document.getElementById('warning').style.display = 'block';
+            }
+        }
+        
+        function updateSystemMemory(system) {
+            const container = document.getElementById('system-memory');
+            const usedPercent = parseFloat(system.usedPercent);
+            const percentClass = usedPercent > 80 ? 'danger' : usedPercent > 60 ? 'warning-text' : 'good';
+            
+            container.innerHTML = `
+                <div class="metric">
+                    <span class="metric-label">Total Memory</span>
+                    <span class="metric-value">${system.total}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Used Memory</span>
+                    <span class="metric-value ${percentClass}">${system.used} (${system.usedPercent})</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Free Memory</span>
+                    <span class="metric-value">${system.free}</span>
+                </div>
+            `;
+        }
+        
+        function updateNodeMemory(node) {
+            const container = document.getElementById('node-memory');
+            const heapPercent = parseFloat(node.heapPercent);
+            const percentClass = heapPercent > 80 ? 'danger' : heapPercent > 60 ? 'warning-text' : 'good';
+            
+            container.innerHTML = `
+                <div class="metric">
+                    <span class="metric-label">RSS (Total Process)</span>
+                    <span class="metric-value">${node.rss}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Heap Total</span>
+                    <span class="metric-value">${node.heapTotal}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Heap Used</span>
+                    <span class="metric-value ${percentClass}">${node.heapUsed} (${node.heapPercent})</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">External</span>
+                    <span class="metric-value">${node.external}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Array Buffers</span>
+                    <span class="metric-value">${node.arrayBuffers}</span>
+                </div>
+            `;
+        }
+        
+        function updateChromiumProcesses(chromium) {
+            const summaryContainer = document.getElementById('chromium-summary');
+            const processContainer = document.getElementById('chromium-processes');
+            
+            if (!chromium.summary || chromium.summary.totalProcesses === 0) {
+                summaryContainer.innerHTML = `
+                    <div class="metric">
+                        <span class="metric-label">No Chromium processes running</span>
+                    </div>
+                `;
+                processContainer.innerHTML = '';
+                return;
+            }
+            
+            summaryContainer.innerHTML = `
+                <div class="metric">
+                    <span class="metric-label">Total Processes</span>
+                    <span class="metric-value">${chromium.summary.totalProcesses}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Total Memory</span>
+                    <span class="metric-value">${chromium.summary.totalMemory}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Total CPU</span>
+                    <span class="metric-value">${chromium.summary.totalCpu}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Process Types</span>
+                    <span class="metric-value">${JSON.stringify(chromium.summary.byType)}</span>
+                </div>
+            `;
+            
+            processContainer.innerHTML = chromium.processes.map(p => `
+                <div class="process">
+                    <div class="process-header">
+                        <span>PID: ${p.pid}</span>
+                        <span class="process-type">${p.type}</span>
+                    </div>
+                    <div>Memory: ${p.rss} | CPU: ${p.cpu}%</div>
+                </div>
+            `).join('');
+        }
+        
+        function updateTimestamp(timestamp) {
+            const container = document.getElementById('timestamp');
+            container.textContent = `Last updated: ${new Date(timestamp).toLocaleString()}`;
+        }
+        
+        function checkWarnings(data) {
+            const warningEl = document.getElementById('warning');
+            const systemUsed = parseFloat(data.system.usedPercent);
+            const heapUsed = parseFloat(data.nodeProcess.heapPercent);
+            
+            if (systemUsed > 85) {
+                warningEl.textContent = `⚠️ High system memory usage: ${data.system.usedPercent}`;
+                warningEl.style.display = 'block';
+            } else if (heapUsed > 85) {
+                warningEl.textContent = `⚠️ High Node.js heap usage: ${data.nodeProcess.heapPercent}`;
+                warningEl.style.display = 'block';
+            } else {
+                warningEl.style.display = 'none';
+            }
+        }
+        
+        // Auto-refresh every 10 seconds
+        setInterval(fetchMemoryData, 10000);
+        
+        // Initial load
+        fetchMemoryData();
+    </script>
+</body>
+</html>

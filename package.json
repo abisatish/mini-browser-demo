@@ -7,7 +7,9 @@
     "build:client": "cd client && npm install && npm run build",
     "install:browsers": "npx playwright install chromium",
     "start:server": "cd server && npm install && npm start",
-    "deploy:all": "npm run build:client && npm run install:browsers && npm run start:server"
+    "start:server:32gb": "cd server && ./start-32gb.sh",
+    "deploy:all": "npm run build:client && npm run install:browsers && npm run start:server",
+    "deploy:all:32gb": "npm run build:client && npm run install:browsers && npm run start:server:32gb"
   },
   "engines": {
     "node": ">=18.0.0"
