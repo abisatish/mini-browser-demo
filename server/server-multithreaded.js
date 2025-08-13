@@ -20,8 +20,8 @@ const CONFIG = {
   MAX_CONCURRENT_USERS: parseInt(process.env.MAX_USERS) || 3,
   BROWSER_WORKERS: parseInt(process.env.BROWSER_WORKERS) || 3, // Match max users for true isolation
   BROWSERS_PER_WORKER: parseInt(process.env.BROWSERS_PER_WORKER) || 1, // 1 browser per worker for stability
-  SCREENSHOT_QUALITY: parseInt(process.env.SCREENSHOT_QUALITY) || 80,
-  TARGET_FPS: parseInt(process.env.TARGET_FPS) || 15, // Back to 15 FPS
+  SCREENSHOT_QUALITY: parseInt(process.env.SCREENSHOT_QUALITY) || 75,  // 75 is sweet spot for JPEG
+  TARGET_FPS: parseInt(process.env.TARGET_FPS) || 12, // 12 FPS is smoother with less CPU
   REQUEST_QUEUE_SIZE: parseInt(process.env.REQUEST_QUEUE_SIZE) || 50,
   SESSION_TIMEOUT: parseInt(process.env.SESSION_TIMEOUT) || 30 * 60 * 1000,
   WORKER_RESTART_DELAY: parseInt(process.env.WORKER_RESTART_DELAY) || 3000,
@@ -648,7 +648,11 @@ async function startServer() {
   console.log('🚀 Starting multi-threaded mini-browser server...');
   
   const app = express();
-  const wss = new WebSocketServer({ noServer: true });
+  // OPTIMIZATION #2: Turn off WebSocket compression for images
+  const wss = new WebSocketServer({ 
+    noServer: true,
+    perMessageDeflate: false  // Don't recompress already-compressed JPEG
+  });
   
   // Initialize managers
   const sessionManager = new SessionManager();
@@ -760,11 +764,16 @@ async function startServer() {
           
           // Handle screenshot responses
           if (response.screenshot && response.compressed) {
-            // Direct send - already compressed by browser worker
-            if (session.ws.readyState === session.ws.OPEN) {
-              session.ws.send(response.screenshot, { binary: true });
+            // OPTIMIZATION #3: Drop frames when socket is full
+            const SOFT_LIMIT = 2 * 1024 * 1024; // 2MB
+            if (session.ws.bufferedAmount > SOFT_LIMIT) {
+              session.stats.droppedFrames++;
+              // Skip this frame - next tick will try again
+            } else if (session.ws.readyState === session.ws.OPEN) {
+              // Direct send - already compressed by browser worker
+              session.ws.send(response.screenshot, { binary: true, compress: false });
+              session.stats.screenshots++;
             }
-            session.stats.screenshots++;
           }
           
           // Send loading states immediately for navigation
@@ -851,35 +860,31 @@ async function startServer() {
         continue;
       }
       
-      // Check backpressure
+      // OPTIMIZATION #8: Make adaptive FPS react faster
       const bufferedAmount = session.ws.bufferedAmount || 0;
-      const BACKPRESSURE_THRESHOLD = 256 * 1024;
+      const workerState = browserPool.workerStates.get(browserPool.browserAssignments.get(session.browserId));
+      const workerLoad = workerState?.load || 0;
+      const queueLength = requestQueue.size();
       
-      if (bufferedAmount > BACKPRESSURE_THRESHOLD) {
-        session.adaptiveFPS.backpressureCount++;
-        session.stats.droppedFrames++;
-        
-        if (session.adaptiveFPS.backpressureCount > 3) {
-          const newFPS = Math.max(session.adaptiveFPS.min, session.adaptiveFPS.current - 2);
-          if (newFPS !== session.adaptiveFPS.current) {
-            session.adaptiveFPS.current = newFPS;
-            console.log(`📉 Reduced FPS to ${newFPS} for session ${session.id}`);
-          }
-          session.adaptiveFPS.backpressureCount = 0;
+      // Fast decrease when under pressure
+      if (bufferedAmount > 256 * 1024 || workerLoad > 0.85 || queueLength > 5) {
+        // Drop FPS by 5 immediately
+        const newFPS = Math.max(session.adaptiveFPS.min, session.adaptiveFPS.current - 5);
+        if (newFPS !== session.adaptiveFPS.current) {
+          session.adaptiveFPS.current = newFPS;
+          console.log(`⚡ Fast FPS drop to ${newFPS} for session ${session.id} (buffer: ${(bufferedAmount/1024).toFixed(0)}KB, load: ${workerLoad.toFixed(2)})`);
         }
-        continue;
+        session.adaptiveFPS.lastAdjust = now;
+        continue; // Skip this frame
       }
       
-      // Clear backpressure and maybe increase FPS (only if not idle)
-      if (bufferedAmount < BACKPRESSURE_THRESHOLD / 4) {
-        session.adaptiveFPS.backpressureCount = 0;
-        
-        // Only increase FPS if session is active
+      // Slow increase only when everything is good for 5 seconds
+      if (bufferedAmount < 64 * 1024 && workerLoad < 0.5 && queueLength < 2) {
         if (!session.adaptiveFPS.isIdle && now - session.adaptiveFPS.lastAdjust > 5000) {
           const newFPS = Math.min(session.adaptiveFPS.max, session.adaptiveFPS.current + 1);
           if (newFPS !== session.adaptiveFPS.current) {
             session.adaptiveFPS.current = newFPS;
-            console.log(`📈 Increased FPS to ${newFPS} for session ${session.id}`);
+            console.log(`📈 Slow FPS increase to ${newFPS} for session ${session.id}`);
           }
           session.adaptiveFPS.lastAdjust = now;
         }
@@ -898,7 +903,13 @@ async function startServer() {
           });
           
           if (response.screenshot && session.ws.readyState === session.ws.OPEN) {
-            session.ws.send(response.screenshot, { binary: true });
+            // OPTIMIZATION #3: Drop frames when socket is full
+            const SOFT_LIMIT = 2 * 1024 * 1024; // 2MB
+            if (session.ws.bufferedAmount > SOFT_LIMIT) {
+              session.stats.droppedFrames++;
+            } else {
+              session.ws.send(response.screenshot, { binary: true, compress: false });
+            }
           } else if (response.skipped && session.ws.readyState === session.ws.OPEN) {
             session.ws.send(JSON.stringify({
               type: 'status',

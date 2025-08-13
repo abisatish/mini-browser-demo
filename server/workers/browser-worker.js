@@ -82,12 +82,15 @@ async function createBrowser(sessionId) {
     // Launch browser with optimized settings and memory limits
     const browser = await chromium.launch({
       headless: headless,
+      // OPTIMIZATION #7: Chromium launch flags for containers
       args: [
         ...BROWSER_ARGS,
         '--disable-dev-shm-usage',  // Critical for Docker
-        '--max-renderer-process-count=2',  // Allow 2 renderer processes
+        '--disable-background-timer-throttling',  // Don't throttle timers
+        '--disable-renderer-backgrounding',  // Keep renderer active
+        '--disable-features=TranslateUI',  // Trim extras
+        '--max-renderer-process-count=1',  // One renderer per browser
         '--memory-pressure-off'  // Disable memory pressure reporting
-        // Removed memory limits - let Chrome manage its own memory
       ],
       // Reduce resource usage
       chromiumSandbox: false,
@@ -98,7 +101,7 @@ async function createBrowser(sessionId) {
     
     // Create context with reasonable defaults
     const context = await browser.newContext({
-      viewport: { width: 1280, height: 720 },
+      viewport: { width: 1280, height: 720 },  // OPTIMIZATION #6: Force 720p viewport
       userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
       deviceScaleFactor: 1,
       hasTouch: false,
@@ -108,6 +111,25 @@ async function createBrowser(sessionId) {
       // Reduce animations for better performance
       reducedMotion: 'reduce',
       forcedColors: 'none'
+    });
+    
+    // OPTIMIZATION #5: Block heavy resources (video/streaming/analytics)
+    await context.route('**/*', (route, request) => {
+      const type = request.resourceType();
+      const url = request.url();
+      
+      // Kill video/audio streams and very large files
+      if (type === 'media' || url.endsWith('.mp4') || url.endsWith('.m3u8') || url.endsWith('.webm')) {
+        return route.abort();
+      }
+      
+      // Block heavy trackers/ads that hurt FPS
+      if (url.includes('doubleclick.net') || url.includes('googletagmanager.com') || 
+          url.includes('google-analytics.com') || url.includes('facebook.com/tr')) {
+        return route.abort();
+      }
+      
+      return route.continue();
     });
     
     // Add stealth scripts
@@ -132,6 +154,22 @@ async function createBrowser(sessionId) {
     
     // Create initial page
     const page = await context.newPage();
+    
+    // OPTIMIZATION #5: Disable animations and transitions for better performance
+    await page.addStyleTag({ 
+      content: `
+        * { 
+          animation: none !important; 
+          transition: none !important; 
+        }
+        video, canvas { 
+          filter: opacity(0.9999); /* pause heavy paints without blanking */
+        }
+      `
+    });
+    
+    // OPTIMIZATION #6: Ensure viewport is 720p
+    await page.setViewportSize({ width: 1280, height: 720 });
     
     // Set up error handling with auto-recovery
     page.on('crash', async () => {
@@ -347,65 +385,39 @@ async function executeBrowserCommand(browserId, command) {
           break;
         }
         
-        
-        // Quick check if page exists and is ready
-        try {
-          const pageExists = await page.evaluate(() => true).catch(() => false);
-          if (!pageExists) {
-            response.skipped = true;
-            response.reason = 'page_not_ready';
-            break;
-          }
-        } catch {
+        // Optimization #1: Check readyState to skip during loading
+        const readyState = await page.evaluate(() => document.readyState).catch(() => 'loading');
+        if (readyState === 'loading') {
           response.skipped = true;
-          response.reason = 'page_error';
+          response.reason = 'page_loading';
           break;
         }
         
-        // Take screenshot with FINAL quality (no recompression needed)
-        // ChatGPT optimization: Set JPEG quality at capture time
-        const quality = command.quality || 80;  // Use passed quality or default
-        
-        // Smart screenshot: Lower quality for idle sessions
-        const adaptiveQuality = command.isIdle ? 60 : quality;
+        // OPTIMIZATION #1: Encode at capture (JPEG) - no post re-compression
+        const quality = Math.max(40, Math.min(95, command.quality ?? 75));
         
         try {
-          const screenshot = await Promise.race([
-            page.screenshot({
-              type: 'jpeg',
-              quality: adaptiveQuality,  // Adaptive quality based on activity
-              fullPage: false,
-              clip: { x: 0, y: 0, width: 1280, height: 720 },
-              animations: 'allow', // Don't wait for animations to finish
-              timeout: command.isIdle ? 500 : 300  // Longer timeout for idle (less urgent)
-            }),
-            new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Screenshot timeout')), command.isIdle ? 550 : 350)
-            )
-          ]).catch(() => null);
+          const buf = await page.screenshot({
+            type: 'jpeg',  // JPEG is 5-10x cheaper than PNG
+            quality: quality,
+            clip: { x: 0, y: 0, width: 1280, height: 720 },  // Force 720p viewport
+            fullPage: false,
+            timeout: 300
+          });
           
-          if (screenshot) {
-            // Simple change detection: compare screenshot size
-            const lastSize = lastScreenshots.get(browserId);
-            const currentSize = screenshot.length;
-            
-            // If size is very similar (within 5%), might be unchanged
-            if (lastSize && Math.abs(currentSize - lastSize) / lastSize < 0.05) {
-              response.possiblyUnchanged = true;
-            }
-            
-            lastScreenshots.set(browserId, currentSize);
-            response.screenshot = screenshot;
-            response.compressed = true;  // Flag that this is already at final quality
-            response.quality = adaptiveQuality;
+          if (buf) {
+            // ZERO-COPY transfer using transferList
+            response.screenshot = buf;
+            response.compressed = true;  // Mark as already compressed
+            response.transferList = [buf.buffer];  // Transfer ownership to main thread
             stats.screenshotsGenerated++;
           } else {
             response.skipped = true;
-            response.reason = 'timeout';
+            response.reason = 'failed';
           }
-        } catch {
+        } catch (error) {
           response.skipped = true;
-          response.reason = 'failed';
+          response.reason = 'error';
         }
         break;
         
@@ -556,7 +568,13 @@ parentPort.on('message', async (msg) => {
   // Always send response back to main thread
   if (parentPort) {
     console.log(`[Worker ${workerId}] Sending response for command ${msg.cmd}, messageId: ${response.messageId}`);
-    parentPort.postMessage(response);
+    // Use transferList for zero-copy transfer of screenshots
+    if (response.transferList) {
+      parentPort.postMessage(response, response.transferList);
+      delete response.transferList; // Clean up
+    } else {
+      parentPort.postMessage(response);
+    }
   } else {
     console.error(`[Worker ${workerId}] Parent port not available`);
   }

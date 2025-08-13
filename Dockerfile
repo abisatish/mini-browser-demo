@@ -42,8 +42,8 @@ RUN cd server && npx playwright install --with-deps chromium
 
 # Set default environment variables optimized for Railway (8 vCPUs, 8GB RAM)
 ENV MAX_USERS=3
-ENV TARGET_FPS=15
-ENV SCREENSHOT_QUALITY=80
+ENV TARGET_FPS=12
+ENV SCREENSHOT_QUALITY=75
 ENV BROWSER_WORKERS=3
 ENV BROWSERS_PER_WORKER=1
 ENV NODE_OPTIONS="--max-old-space-size=6144"

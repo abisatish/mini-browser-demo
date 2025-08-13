@@ -13,8 +13,8 @@
   },
   "variables": {
     "MAX_USERS": "3",
-    "TARGET_FPS": "15",
-    "SCREENSHOT_QUALITY": "80",
+    "TARGET_FPS": "12",
+    "SCREENSHOT_QUALITY": "75",
     "BROWSER_WORKERS": "3",
     "BROWSERS_PER_WORKER": "1",
     "NODE_OPTIONS": "--max-old-space-size=4096",
