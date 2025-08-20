@@ -369,142 +369,124 @@ async function executeBrowserCommand(browserId, command) {
             break;
           }
           
-          // Set viewport to large height but stay under Claude's 8000px limit
-          await page.setViewportSize({ width: 1280, height: 7500 }); // Max safe height for Claude API
-          
-          // Take the full page screenshot immediately
-          console.log(`[Worker ${workerId}] Taking full page screenshot...`);
-          
-          // Get the full page dimensions for logging
-          const fullPageDimensions = await page.evaluate(() => ({
-            width: document.documentElement.scrollWidth,
-            height: document.documentElement.scrollHeight,
-            viewportHeight: window.innerHeight
-          }));
-          
-          console.log(`[Worker ${workerId}] Page dimensions - width: ${fullPageDimensions.width}px, height: ${fullPageDimensions.height}px, viewport: ${fullPageDimensions.viewportHeight}px`);
-          
-          // Take screenshot with Claude's dimension limits in mind
-          const screenshot = await page.screenshot({
-            type: 'jpeg',
-            quality: 80,  // Same as ProfileScanner
-            fullPage: false,  // Don't use fullPage to control dimensions
-            clip: { x: 0, y: 0, width: 1280, height: 7500 }  // Explicit clip to stay under 8000px
+          // Take screenshot for analysis (same settings as extractLinkedInDataFromScreenshot)
+          console.log(`[Worker ${workerId}] Capturing full page screenshot...`);
+          const screenshot = await page.screenshot({ 
+            type: 'jpeg', 
+            quality: 80,
+            fullPage: true
           });
+          console.log(`[Worker ${workerId}] Screenshot captured, size: ${screenshot.length} bytes`);
           
-          console.log(`[Worker ${workerId}] Screenshot taken - size: ${screenshot.length} bytes`);
-          
-          // Convert to base64
-          const base64Screenshot = screenshot.toString('base64');
-          
-          // Do visual scrolling effect for UI (fast scroll down and up)
-          console.log(`[Worker ${workerId}] Performing visual scan effect...`);
-          
-          const pageHeight = await page.evaluate(() => document.body.scrollHeight);
-          const scrollSteps = 6; // Fewer steps for faster scrolling
-          
-          // Fast scroll down
-          for (let i = 1; i <= scrollSteps; i++) {
-            await page.evaluate((scrollTo) => {
-              window.scrollTo({ top: scrollTo, behavior: 'auto' });
-            }, (pageHeight / scrollSteps) * i);
-            await page.waitForTimeout(150); // Quick pause between scrolls
-          }
-          
-          // Fast scroll back up
-          for (let i = scrollSteps - 1; i >= 0; i--) {
-            await page.evaluate((scrollTo) => {
-              window.scrollTo({ top: scrollTo, behavior: 'auto' });
-            }, (pageHeight / scrollSteps) * i);
-            await page.waitForTimeout(120); // Even quicker going up
-          }
-          
-          console.log(`[Worker ${workerId}] Visual scan complete, processing screenshot...`);
-          
-          // Import Anthropic SDK directly in the worker
+          // Import AI SDKs
           const { default: Anthropic } = await import('@anthropic-ai/sdk');
+          const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({
+            apiKey: process.env.ANTHROPIC_API_KEY
+          }) : null;
           
-          // Process leads directly here instead of calling the API
-          if (!process.env.ANTHROPIC_API_KEY) {
-            console.log('Using mock data - no Anthropic API key configured');
+          // We don't have OpenAI in worker, but can add fallback if needed
+          
+          if (!anthropic) {
+            console.log(`[Worker ${workerId}] No AI client configured`);
             response.type = 'leadsAnalysis';
-            response.leads = [
-              { name: 'Evan Rama', title: 'Founder & CEO', company: 'Austin, Texas, United States' },
-              { name: 'Alexander Janssendéez', title: 'Summer Analyst', company: 'Philadelphia, Pennsylvania, United States' },
-              { name: 'Aishwarya Sridhar', title: 'Software Development Intern', company: 'Georgia, United States' }
-            ];
+            response.error = 'No AI client configured (need Anthropic API key)';
             break;
           }
           
-          const anthropic = new Anthropic({
-            apiKey: process.env.ANTHROPIC_API_KEY
-          });
+          console.log(`[Worker ${workerId}] 🔵 API: Screenshot size before encoding:`, screenshot.length);
           
-          // Send screenshot to Claude for analysis (using same model as ProfileScanner)
-          const aiResponse = await anthropic.messages.create({
-            model: 'claude-3-5-sonnet-20241022',  // Same model as ProfileScanner
-            max_tokens: 2000,
-            messages: [{
-              role: 'user',
-              content: [
-                {
-                  type: 'image',
-                  source: {
-                    type: 'base64',
-                    media_type: 'image/jpeg',
-                    data: base64Screenshot
-                  }
-                },
-                {
-                  type: 'text',
-                  text: `Look at this LinkedIn Sales Navigator screenshot. Extract information for ALL visible leads/people shown in the list.
-
-For each person/lead visible, extract:
-- name: Their full name
-- title: Their job title/position
-- company: Their company name (may be shown as part of location or separately)
-- location: City, State/Country if shown
-- dateAdded: The date added if visible (like "8/20/2025")
-
-Important: 
-- Look for the table/list of people with profile pictures
-- Each row is a different lead
-- Extract ALL visible leads, not just the first one
-
-Return ONLY a valid JSON array. Example format:
-[{"name": "Evan Rama", "title": "Founder & CEO", "company": "Company Name", "location": "Austin, Texas", "dateAdded": "8/20/2025"}]
-
-If you cannot see any leads, return: []`
-                }
-              ]
-            }]
-          });
+          let content;
           
-          // Parse Claude's response
-          const content = aiResponse.content[0].type === 'text' ? aiResponse.content[0].text : '';
-          
-          // Extract JSON from the response
-          let leads = [];
-          try {
-            const jsonMatch = content.match(/\[[\s\S]*\]/);
-            if (jsonMatch) {
-              leads = JSON.parse(jsonMatch[0]);
-              console.log(`[Worker ${workerId}] Successfully extracted ${leads.length} leads`);
+          // Try Claude (following exact pattern from extractLinkedInDataFromScreenshot)
+          if (anthropic) {
+            console.log(`[Worker ${workerId}] 🔵 API: Using Claude for Sales Navigator analysis`);
+            console.log(`[Worker ${workerId}] 🔵 API: Anthropic client exists:`, !!anthropic);
+            console.log(`[Worker ${workerId}] 🔵 API: Anthropic API key exists:`, !!process.env.ANTHROPIC_API_KEY);
+            console.log(`[Worker ${workerId}] 🔵 API: Screenshot size:`, screenshot.length, 'bytes');
+            
+            try {
+              console.log(`[Worker ${workerId}] 🔵 API: Preparing Claude request...`);
+              const startTime = Date.now();
+              
+              const claudeResponse = await anthropic.messages.create({
+                model: "claude-3-5-sonnet-20241022",
+                max_tokens: 1000,
+                temperature: 0.3,
+                messages: [{
+                  role: "user",
+                  content: [
+                    {
+                      type: "text",
+                      text: `Analyze this LinkedIn Sales Navigator screenshot and extract lead information. Return ONLY a JSON array with these fields:
+[
+  {
+    "name": "person's full name",
+    "title": "current job title",
+    "company": "current employer"
+  }
+]
+Extract ALL visible leads/people from the Sales Navigator list. Use "Not available" for fields not visible. Return only the JSON array, no other text.`
+                    },
+                    {
+                      type: "image",
+                      source: {
+                        type: "base64",
+                        media_type: "image/jpeg",
+                        data: screenshot.toString('base64')
+                      }
+                    }
+                  ]
+                }]
+              });
+              
+              const endTime = Date.now();
+              console.log(`[Worker ${workerId}] 🔵 API: Claude API call completed in:`, endTime - startTime, 'ms');
+              console.log(`[Worker ${workerId}] 🔵 API: Claude response object:`, JSON.stringify({
+                id: claudeResponse.id,
+                type: claudeResponse.type,
+                role: claudeResponse.role,
+                model: claudeResponse.model,
+                stop_reason: claudeResponse.stop_reason,
+                usage: claudeResponse.usage,
+                content_length: claudeResponse.content?.length
+              }, null, 2));
+              
+              content = claudeResponse.content[0].text;
+              console.log(`[Worker ${workerId}] 🔵 API: Claude extracted text:`, content);
+              console.log(`[Worker ${workerId}] 🔵 API: Content length:`, content.length, 'characters');
+              
+            } catch (claudeError) {
+              console.error(`[Worker ${workerId}] 🔵 API: Claude error occurred`);
+              console.error(`[Worker ${workerId}] 🔵 API: Error name:`, claudeError.name);
+              console.error(`[Worker ${workerId}] 🔵 API: Error message:`, claudeError.message);
+              console.error(`[Worker ${workerId}] 🔵 API: Error stack:`, claudeError.stack);
+              if (claudeError.response) {
+                console.error(`[Worker ${workerId}] 🔵 API: Error response:`, claudeError.response);
+              }
+              throw claudeError;
             }
-          } catch (parseError) {
-            console.error('[Worker] Failed to parse Claude response:', parseError);
           }
           
-          response.type = 'leadsAnalysis';
-          response.leads = leads;
+          // Parse response (following exact pattern from extractLinkedInDataFromScreenshot)
+          try {
+            const jsonMatch = content.match(/```json\n?([\s\S]*?)\n?```/) || [null, content];
+            const jsonString = jsonMatch[1] || content;
+            const leads = JSON.parse(jsonString.trim());
+            
+            console.log(`[Worker ${workerId}] 🔵 API: Successfully parsed ${leads.length} leads`);
+            response.type = 'leadsAnalysis';
+            response.leads = leads;
+            
+          } catch (e) {
+            console.error(`[Worker ${workerId}] 🔵 API: Failed to parse Claude response:`, content);
+            response.type = 'leadsAnalysis';
+            response.error = 'Failed to parse lead data from screenshot';
+          }
           
         } catch (error) {
           console.error(`[Worker ${workerId}] Lead scan error:`, error);
           response.type = 'leadsAnalysis';
           response.error = error.message || 'Failed to scan leads';
-        } finally {
-          // Reset viewport back to normal
-          await page.setViewportSize({ width: 1280, height: 720 });
         }
         break;
         
