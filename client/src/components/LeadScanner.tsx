@@ -25,6 +25,15 @@ export default function LeadScanner({ screenshot, onClose }: LeadScannerProps) {
     setError(null);
     setScanProgress(0);
     
+    // Check if screenshot exists
+    if (!screenshot || screenshot.length < 100) {
+      setError('No screenshot available. Please wait for the page to load.');
+      setIsScanning(false);
+      return;
+    }
+
+    console.log('Starting scan with screenshot length:', screenshot.length);
+    
     // Animate progress
     const progressInterval = setInterval(() => {
       setScanProgress(prev => {

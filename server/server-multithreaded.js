@@ -695,21 +695,31 @@ async function startServer() {
       });
 
       // Process the screenshot - handle both data URL and raw base64
+      console.log('Received screenshot type:', typeof screenshot);
+      console.log('Screenshot starts with:', screenshot.substring(0, 50));
+      console.log('Screenshot length:', screenshot.length);
+      
       let base64Data;
       if (screenshot.startsWith('data:')) {
         // It's a data URL, extract the base64 part
         const matches = screenshot.match(/^data:image\/[a-z]+;base64,(.+)$/);
         if (!matches || !matches[1]) {
+          console.error('Failed to match data URL pattern');
           throw new Error('Invalid screenshot data URL format');
         }
         base64Data = matches[1];
-      } else {
-        // Assume it's already base64
+      } else if (screenshot.startsWith('/9j/') || screenshot.startsWith('iVBOR')) {
+        // Already base64 (JPEG starts with /9j/, PNG with iVBOR)
         base64Data = screenshot;
+      } else {
+        // Unknown format
+        console.error('Unknown screenshot format, first 100 chars:', screenshot.substring(0, 100));
+        throw new Error('Screenshot is not in a recognized format');
       }
 
       // Validate base64
       if (!base64Data || base64Data.length < 100) {
+        console.error('Base64 data too short:', base64Data ? base64Data.length : 'null');
         throw new Error('Screenshot data is too short or invalid');
       }
 
