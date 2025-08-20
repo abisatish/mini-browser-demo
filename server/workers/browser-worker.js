@@ -369,12 +369,25 @@ async function executeBrowserCommand(browserId, command) {
             break;
           }
           
-          // Take screenshot for analysis (same settings as extractLinkedInDataFromScreenshot)
+          // Get the full page dimensions
+          const dimensions = await page.evaluate(() => ({
+            width: document.documentElement.scrollWidth,
+            height: document.documentElement.scrollHeight
+          }));
+          
+          console.log(`[Worker ${workerId}] Page dimensions: ${dimensions.width}x${dimensions.height}`);
+          
+          // Take screenshot with explicit clip to capture full page
           console.log(`[Worker ${workerId}] Capturing full page screenshot...`);
           const screenshot = await page.screenshot({ 
             type: 'jpeg', 
             quality: 80,
-            fullPage: true
+            clip: {
+              x: 0,
+              y: 0,
+              width: dimensions.width,
+              height: Math.min(dimensions.height, 7500) // Cap at 7500px for Claude API limit
+            }
           });
           console.log(`[Worker ${workerId}] Screenshot captured, size: ${screenshot.length} bytes`);
           
