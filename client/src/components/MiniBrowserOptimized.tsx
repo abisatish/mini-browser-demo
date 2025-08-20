@@ -5,7 +5,7 @@ import ProfileScanner from './ProfileScanner';
 
 export default function MiniBrowserOptimized() {
   const [img, setImg] = useState('');
-  const [url, setUrl] = useState('https://www.google.com');
+  const [url, setUrl] = useState('https://www.linkedin.com/sales/home');
   const [showMenu, setShowMenu] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');

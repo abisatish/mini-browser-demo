@@ -242,10 +242,10 @@ async function createBrowser(sessionId) {
       }
     });
     
-    // Navigate to initial page
-    await page.goto('https://www.google.com', { 
+    // Navigate directly to LinkedIn Sales Navigator
+    await page.goto('https://www.linkedin.com/sales/home', { 
       waitUntil: 'domcontentloaded',
-      timeout: 10000 
+      timeout: 15000 
     });
     
     // Store references
