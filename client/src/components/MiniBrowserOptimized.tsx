@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import './MiniBrowser.css';
 import SearchResults from './SearchResults';
 import ProfileScanner from './ProfileScanner';
+import LeadScanner from './LeadScanner';
 
 export default function MiniBrowserOptimized() {
   const [img, setImg] = useState('');
@@ -14,6 +15,7 @@ export default function MiniBrowserOptimized() {
   const [typingPosition, setTypingPosition] = useState<{x: number, y: number} | null>(null);
   const [showSearchResults, setShowSearchResults] = useState(true); // Start with overlay visible
   const [showProfileScanner, setShowProfileScanner] = useState(false);
+  const [showLeadScanner, setShowLeadScanner] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([
     {
       title: 'Pratyush Chakraborty LinkedIn profile',
@@ -456,6 +458,21 @@ export default function MiniBrowserOptimized() {
               </button>
               <button 
                 onClick={() => {
+                  // Check if we're on Sales Navigator
+                  if (url.includes('linkedin.com/sales/')) {
+                    setShowLeadScanner(true);
+                  } else {
+                    alert('Please navigate to LinkedIn Sales Navigator first');
+                  }
+                  setShowMenu(false);
+                }}
+                className="menu-item"
+                title="Extract all leads from Sales Navigator page"
+              >
+                📊 Lead Scanner (CSV)
+              </button>
+              <button 
+                onClick={() => {
                   setShowSearchResults(true);
                   setShowMenu(false);
                 }} 
@@ -546,6 +563,24 @@ export default function MiniBrowserOptimized() {
           </>
         )}
       </div>
+      
+      {/* Profile Scanner Modal */}
+      {showProfileScanner && (
+        <ProfileScanner
+          wsRef={wsRef}
+          visible={showProfileScanner}
+          onClose={() => setShowProfileScanner(false)}
+        />
+      )}
+      
+      {/* Lead Scanner Modal */}
+      {showLeadScanner && (
+        <LeadScanner
+          screenshot={img}
+          onClose={() => setShowLeadScanner(false)}
+          ws={wsRef.current}
+        />
+      )}
     </div>
   );
 }

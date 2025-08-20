@@ -665,6 +665,95 @@ async function startServer() {
   app.use(express.json());
   app.use(express.static(path.join(__dirname, '../client/dist')));
   
+  // Lead Scanner API endpoint
+  app.post('/api/scan-leads', async (req, res) => {
+    const { screenshot } = req.body;
+    
+    if (!screenshot) {
+      return res.status(400).json({ error: 'Screenshot is required' });
+    }
+
+    try {
+      // Import Anthropic
+      const Anthropic = (await import('@anthropic-ai/sdk')).default;
+      
+      // Check if API key exists
+      if (!process.env.ANTHROPIC_API_KEY) {
+        console.log('Using mock data - no Anthropic API key configured');
+        // Return mock data for testing
+        return res.json({
+          leads: [
+            { name: 'Evan Rama', title: 'Founder & CEO', company: 'Austin, Texas, United States' },
+            { name: 'Alexander Janssendéez', title: 'Summer Analyst', company: 'Philadelphia, Pennsylvania, United States' },
+            { name: 'Aishwarya Sridhar', title: 'Software Development Intern', company: 'Georgia, United States' }
+          ]
+        });
+      }
+
+      const anthropic = new Anthropic({
+        apiKey: process.env.ANTHROPIC_API_KEY
+      });
+
+      // Send screenshot to Claude for analysis
+      const response = await anthropic.messages.create({
+        model: 'claude-3-haiku-20240307',
+        max_tokens: 1000,
+        messages: [{
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: 'image/jpeg',
+                data: screenshot.split(',')[1] || screenshot
+              }
+            },
+            {
+              type: 'text',
+              text: `Extract all LinkedIn Sales Navigator leads from this screenshot. For each lead, extract:
+- Name (full name)
+- Title (job title/position)
+- Company (company name)
+- Location (if visible)
+- Date Added (if visible)
+
+Return ONLY a JSON array of objects with these fields. Example:
+[{"name": "John Doe", "title": "CEO", "company": "Acme Corp", "location": "New York", "dateAdded": "2 weeks"}]
+
+If no leads are visible, return an empty array: []`
+            }
+          ]
+        }]
+      });
+
+      // Parse Claude's response
+      const content = response.content[0].type === 'text' ? response.content[0].text : '';
+      
+      // Extract JSON from the response
+      let leads = [];
+      try {
+        // Try to find JSON array in the response
+        const jsonMatch = content.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          leads = JSON.parse(jsonMatch[0]);
+        }
+      } catch (parseError) {
+        console.error('Failed to parse Claude response:', parseError);
+        console.log('Claude response:', content);
+      }
+
+      res.json({ leads });
+      
+    } catch (error) {
+      console.error('Error scanning leads:', error);
+      res.status(500).json({ 
+        error: 'Failed to scan leads',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   // Health check with detailed stats and resource guardrails
   app.get('/api/health', (_req, res) => {
     const memUsage = process.memoryUsage();
