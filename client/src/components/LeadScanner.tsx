@@ -174,9 +174,11 @@ export default function LeadScanner({ wsRef, onClose }: LeadScannerProps) {
               <div className="progress-bar" style={{ width: `${scanProgress}%` }}></div>
             </div>
             <p className="scan-status">
-              {scanProgress < 30 && "🔍 Detecting lead elements..."}
-              {scanProgress >= 30 && scanProgress < 60 && "📝 Extracting names and titles..."}
-              {scanProgress >= 60 && scanProgress < 90 && "🏢 Identifying companies..."}
+              {scanProgress < 20 && "📜 Scrolling to load all leads..."}
+              {scanProgress >= 20 && scanProgress < 40 && "📸 Capturing full page..."}
+              {scanProgress >= 40 && scanProgress < 60 && "🔍 Detecting lead elements..."}
+              {scanProgress >= 60 && scanProgress < 80 && "📝 Extracting information..."}
+              {scanProgress >= 80 && scanProgress < 90 && "🏢 Processing companies..."}
               {scanProgress >= 90 && "✨ Finalizing results..."}
               {" "}{scanProgress}%
             </p>

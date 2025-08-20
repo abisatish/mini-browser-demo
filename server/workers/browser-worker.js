@@ -369,11 +369,44 @@ async function executeBrowserCommand(browserId, command) {
             break;
           }
           
-          // Take a screenshot of the current page
+          // Scroll to load all content
+          console.log(`[Worker ${workerId}] Scrolling to load all leads...`);
+          
+          // Get initial scroll height
+          const initialHeight = await page.evaluate(() => document.body.scrollHeight);
+          
+          // Scroll down in steps to trigger lazy loading
+          let previousHeight = 0;
+          let currentHeight = initialHeight;
+          let scrollAttempts = 0;
+          const maxScrollAttempts = 10;
+          
+          while (previousHeight !== currentHeight && scrollAttempts < maxScrollAttempts) {
+            previousHeight = currentHeight;
+            
+            // Scroll to bottom
+            await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+            
+            // Wait for content to load
+            await page.waitForTimeout(1500);
+            
+            // Get new height
+            currentHeight = await page.evaluate(() => document.body.scrollHeight);
+            scrollAttempts++;
+            
+            console.log(`[Worker ${workerId}] Scroll attempt ${scrollAttempts}: height ${previousHeight} -> ${currentHeight}`);
+          }
+          
+          // Scroll back to top for better screenshot
+          await page.evaluate(() => window.scrollTo(0, 0));
+          await page.waitForTimeout(500);
+          
+          // Take a FULL PAGE screenshot
+          console.log(`[Worker ${workerId}] Taking full page screenshot...`);
           const screenshot = await page.screenshot({
             type: 'jpeg',
-            quality: 90,
-            fullPage: false
+            quality: 85,
+            fullPage: true  // Capture entire page
           });
           
           // Convert to base64
