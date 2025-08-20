@@ -697,7 +697,7 @@ async function startServer() {
       // Send screenshot to Claude for analysis
       const response = await anthropic.messages.create({
         model: 'claude-3-haiku-20240307',
-        max_tokens: 1000,
+        max_tokens: 2000,
         messages: [{
           role: 'user',
           content: [
@@ -706,22 +706,29 @@ async function startServer() {
               source: {
                 type: 'base64',
                 media_type: 'image/jpeg',
-                data: screenshot.split(',')[1] || screenshot
+                data: screenshot.replace(/^data:image\/[a-z]+;base64,/, '')
               }
             },
             {
               type: 'text',
-              text: `Extract all LinkedIn Sales Navigator leads from this screenshot. For each lead, extract:
-- Name (full name)
-- Title (job title/position)
-- Company (company name)
-- Location (if visible)
-- Date Added (if visible)
+              text: `Look at this LinkedIn Sales Navigator screenshot. Extract information for ALL visible leads/people shown in the list.
 
-Return ONLY a JSON array of objects with these fields. Example:
-[{"name": "John Doe", "title": "CEO", "company": "Acme Corp", "location": "New York", "dateAdded": "2 weeks"}]
+For each person/lead visible, extract:
+- name: Their full name
+- title: Their job title/position
+- company: Their company name (may be shown as part of location or separately)
+- location: City, State/Country if shown
+- dateAdded: The date added if visible (like "8/20/2025")
 
-If no leads are visible, return an empty array: []`
+Important: 
+- Look for the table/list of people with profile pictures
+- Each row is a different lead
+- Extract ALL visible leads, not just the first one
+
+Return ONLY a valid JSON array. Example format:
+[{"name": "Evan Rama", "title": "Founder & CEO", "company": "Company Name", "location": "Austin, Texas", "dateAdded": "8/20/2025"}]
+
+If you cannot see any leads, return: []`
             }
           ]
         }]
@@ -737,13 +744,16 @@ If no leads are visible, return an empty array: []`
         const jsonMatch = content.match(/\[[\s\S]*\]/);
         if (jsonMatch) {
           leads = JSON.parse(jsonMatch[0]);
+          console.log(`Successfully extracted ${leads.length} leads from Sales Navigator`);
+        } else {
+          console.log('No JSON array found in Claude response:', content);
         }
       } catch (parseError) {
         console.error('Failed to parse Claude response:', parseError);
         console.log('Claude response:', content);
       }
 
-      res.json({ leads });
+      res.json({ leads, debug: { responseLength: content.length } });
       
     } catch (error) {
       console.error('Error scanning leads:', error);

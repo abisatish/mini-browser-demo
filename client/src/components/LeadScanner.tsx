@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import './ProfileScanner.css';
+import './LeadScanner.css';
 
 interface Lead {
   name: string;
@@ -38,7 +38,7 @@ export default function LeadScanner({ screenshot, onClose }: LeadScannerProps) {
 
     try {
       // Send screenshot to backend for AI processing
-      const response = await fetch('http://localhost:3001/api/scan-leads', {
+      const response = await fetch('/api/scan-leads', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -101,21 +101,21 @@ export default function LeadScanner({ screenshot, onClose }: LeadScannerProps) {
   };
 
   return (
-    <div className="profile-scanner-overlay">
-      <div className="profile-scanner-modal">
-        <button className="profile-scanner-close" onClick={onClose}>×</button>
+    <div className="lead-scanner-overlay">
+      <div className="lead-scanner-modal">
+        <button className="lead-scanner-close" onClick={onClose}>×</button>
         
-        <h2 className="profile-scanner-title">
+        <h2 className="lead-scanner-title">
           <span className="scanner-icon">📊</span>
           Sales Navigator Lead Scanner
         </h2>
         
-        <p className="profile-scanner-description">
+        <p className="lead-scanner-description">
           Extract all visible leads from the current Sales Navigator page into a CSV file.
         </p>
 
         {!isScanning && leads.length === 0 && (
-          <button className="profile-scanner-button" onClick={startScan}>
+          <button className="lead-scanner-button" onClick={startScan}>
             <span className="button-icon">🔍</span>
             Scan Page for Leads
           </button>
@@ -124,10 +124,24 @@ export default function LeadScanner({ screenshot, onClose }: LeadScannerProps) {
         {isScanning && (
           <div className="scanning-animation">
             <div className="scan-line"></div>
+            <div className="scanning-grid">
+              <div className="scan-cell"></div>
+              <div className="scan-cell"></div>
+              <div className="scan-cell"></div>
+              <div className="scan-cell"></div>
+              <div className="scan-cell"></div>
+              <div className="scan-cell"></div>
+            </div>
             <div className="scan-progress">
               <div className="progress-bar" style={{ width: `${scanProgress}%` }}></div>
             </div>
-            <p className="scan-status">Analyzing page content... {scanProgress}%</p>
+            <p className="scan-status">
+              {scanProgress < 30 && "🔍 Detecting lead elements..."}
+              {scanProgress >= 30 && scanProgress < 60 && "📝 Extracting names and titles..."}
+              {scanProgress >= 60 && scanProgress < 90 && "🏢 Identifying companies..."}
+              {scanProgress >= 90 && "✨ Finalizing results..."}
+              {" "}{scanProgress}%
+            </p>
           </div>
         )}
 
@@ -170,7 +184,7 @@ export default function LeadScanner({ screenshot, onClose }: LeadScannerProps) {
               )}
             </div>
             
-            <button className="profile-scanner-button" onClick={startScan}>
+            <button className="lead-scanner-button" onClick={startScan}>
               <span className="button-icon">🔄</span>
               Scan Again
             </button>
