@@ -378,34 +378,85 @@ async function executeBrowserCommand(browserId, command) {
           
           // Convert to base64
           const base64Screenshot = screenshot.toString('base64');
-          const dataUrl = `data:image/jpeg;base64,${base64Screenshot}`;
           
           console.log(`[Worker ${workerId}] Screenshot captured, sending for analysis...`);
           
-          // Import and use fetch
-          const fetch = (await import('node-fetch')).default;
+          // Import Anthropic SDK directly in the worker
+          const { default: Anthropic } = await import('@anthropic-ai/sdk');
           
-          // Send to our API endpoint (use correct port)
-          const port = process.env.PORT || 3001;
-          const apiResponse = await fetch(`http://localhost:${port}/api/scan-leads`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ screenshot: dataUrl })
+          // Process leads directly here instead of calling the API
+          if (!process.env.ANTHROPIC_API_KEY) {
+            console.log('Using mock data - no Anthropic API key configured');
+            response.type = 'leadsAnalysis';
+            response.leads = [
+              { name: 'Evan Rama', title: 'Founder & CEO', company: 'Austin, Texas, United States' },
+              { name: 'Alexander Janssendéez', title: 'Summer Analyst', company: 'Philadelphia, Pennsylvania, United States' },
+              { name: 'Aishwarya Sridhar', title: 'Software Development Intern', company: 'Georgia, United States' }
+            ];
+            break;
+          }
+          
+          const anthropic = new Anthropic({
+            apiKey: process.env.ANTHROPIC_API_KEY
           });
           
-          const result = await apiResponse.json();
+          // Send screenshot to Claude for analysis
+          const aiResponse = await anthropic.messages.create({
+            model: 'claude-3-haiku-20240307',
+            max_tokens: 2000,
+            messages: [{
+              role: 'user',
+              content: [
+                {
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: 'image/jpeg',
+                    data: base64Screenshot
+                  }
+                },
+                {
+                  type: 'text',
+                  text: `Look at this LinkedIn Sales Navigator screenshot. Extract information for ALL visible leads/people shown in the list.
+
+For each person/lead visible, extract:
+- name: Their full name
+- title: Their job title/position
+- company: Their company name (may be shown as part of location or separately)
+- location: City, State/Country if shown
+- dateAdded: The date added if visible (like "8/20/2025")
+
+Important: 
+- Look for the table/list of people with profile pictures
+- Each row is a different lead
+- Extract ALL visible leads, not just the first one
+
+Return ONLY a valid JSON array. Example format:
+[{"name": "Evan Rama", "title": "Founder & CEO", "company": "Company Name", "location": "Austin, Texas", "dateAdded": "8/20/2025"}]
+
+If you cannot see any leads, return: []`
+                }
+              ]
+            }]
+          });
+          
+          // Parse Claude's response
+          const content = aiResponse.content[0].type === 'text' ? aiResponse.content[0].text : '';
+          
+          // Extract JSON from the response
+          let leads = [];
+          try {
+            const jsonMatch = content.match(/\[[\s\S]*\]/);
+            if (jsonMatch) {
+              leads = JSON.parse(jsonMatch[0]);
+              console.log(`[Worker ${workerId}] Successfully extracted ${leads.length} leads`);
+            }
+          } catch (parseError) {
+            console.error('[Worker] Failed to parse Claude response:', parseError);
+          }
           
           response.type = 'leadsAnalysis';
-          if (result.leads && result.leads.length > 0) {
-            response.leads = result.leads;
-            console.log(`[Worker ${workerId}] Found ${result.leads.length} leads`);
-          } else if (result.error) {
-            response.error = result.error;
-          } else {
-            response.error = 'No leads found on this page';
-          }
+          response.leads = leads;
           
         } catch (error) {
           console.error(`[Worker ${workerId}] Lead scan error:`, error);
