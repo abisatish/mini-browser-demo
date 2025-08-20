@@ -369,34 +369,57 @@ async function executeBrowserCommand(browserId, command) {
             break;
           }
           
-          // Take a FULL PAGE screenshot immediately
+          // IMPORTANT: Set page viewport to large height to capture full page
+          await page.setViewportSize({ width: 1280, height: 10000 });
+          
+          // Take the full page screenshot immediately
           console.log(`[Worker ${workerId}] Taking full page screenshot...`);
+          
+          // Get the full page dimensions
+          const fullPageDimensions = await page.evaluate(() => ({
+            width: document.documentElement.scrollWidth,
+            height: document.documentElement.scrollHeight,
+            viewportHeight: window.innerHeight
+          }));
+          
+          console.log(`[Worker ${workerId}] Page dimensions - width: ${fullPageDimensions.width}px, height: ${fullPageDimensions.height}px, viewport: ${fullPageDimensions.viewportHeight}px`);
+          
+          // Force a full page screenshot with explicit dimensions
           const screenshot = await page.screenshot({
             type: 'jpeg',
             quality: 85,
-            fullPage: true  // Capture entire page as-is
+            fullPage: true,  // This SHOULD capture everything
+            captureBeyondViewport: true  // Explicitly capture beyond viewport
           });
           
-          // Do some visual scrolling for UI effect (non-functional)
-          console.log(`[Worker ${workerId}] Performing visual scan effect...`);
-          
-          // Quick scroll down and up for visual effect only
-          await page.evaluate(() => {
-            // Smooth scroll to bottom
-            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-          });
-          await page.waitForTimeout(800);
-          
-          await page.evaluate(() => {
-            // Smooth scroll back to top
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          });
-          await page.waitForTimeout(500);
+          console.log(`[Worker ${workerId}] Screenshot taken - size: ${screenshot.length} bytes`);
           
           // Convert to base64
           const base64Screenshot = screenshot.toString('base64');
           
-          console.log(`[Worker ${workerId}] Screenshot captured, sending for analysis...`);
+          // Do visual scrolling effect for UI (fast scroll down and up)
+          console.log(`[Worker ${workerId}] Performing visual scan effect...`);
+          
+          const pageHeight = await page.evaluate(() => document.body.scrollHeight);
+          const scrollSteps = 6; // Fewer steps for faster scrolling
+          
+          // Fast scroll down
+          for (let i = 1; i <= scrollSteps; i++) {
+            await page.evaluate((scrollTo) => {
+              window.scrollTo({ top: scrollTo, behavior: 'auto' });
+            }, (pageHeight / scrollSteps) * i);
+            await page.waitForTimeout(150); // Quick pause between scrolls
+          }
+          
+          // Fast scroll back up
+          for (let i = scrollSteps - 1; i >= 0; i--) {
+            await page.evaluate((scrollTo) => {
+              window.scrollTo({ top: scrollTo, behavior: 'auto' });
+            }, (pageHeight / scrollSteps) * i);
+            await page.waitForTimeout(120); // Even quicker going up
+          }
+          
+          console.log(`[Worker ${workerId}] Visual scan complete, processing screenshot...`);
           
           // Import Anthropic SDK directly in the worker
           const { default: Anthropic } = await import('@anthropic-ai/sdk');
@@ -479,6 +502,9 @@ If you cannot see any leads, return: []`
           console.error(`[Worker ${workerId}] Lead scan error:`, error);
           response.type = 'leadsAnalysis';
           response.error = error.message || 'Failed to scan leads';
+        } finally {
+          // Reset viewport back to normal
+          await page.setViewportSize({ width: 1280, height: 720 });
         }
         break;
         
