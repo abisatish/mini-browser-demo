@@ -369,45 +369,29 @@ async function executeBrowserCommand(browserId, command) {
             break;
           }
           
-          // Scroll to load all content
-          console.log(`[Worker ${workerId}] Scrolling to load all leads...`);
-          
-          // Get initial scroll height
-          const initialHeight = await page.evaluate(() => document.body.scrollHeight);
-          
-          // Scroll down in steps to trigger lazy loading
-          let previousHeight = 0;
-          let currentHeight = initialHeight;
-          let scrollAttempts = 0;
-          const maxScrollAttempts = 10;
-          
-          while (previousHeight !== currentHeight && scrollAttempts < maxScrollAttempts) {
-            previousHeight = currentHeight;
-            
-            // Scroll to bottom
-            await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-            
-            // Wait for content to load
-            await page.waitForTimeout(1500);
-            
-            // Get new height
-            currentHeight = await page.evaluate(() => document.body.scrollHeight);
-            scrollAttempts++;
-            
-            console.log(`[Worker ${workerId}] Scroll attempt ${scrollAttempts}: height ${previousHeight} -> ${currentHeight}`);
-          }
-          
-          // Scroll back to top for better screenshot
-          await page.evaluate(() => window.scrollTo(0, 0));
-          await page.waitForTimeout(500);
-          
-          // Take a FULL PAGE screenshot
+          // Take a FULL PAGE screenshot immediately
           console.log(`[Worker ${workerId}] Taking full page screenshot...`);
           const screenshot = await page.screenshot({
             type: 'jpeg',
             quality: 85,
-            fullPage: true  // Capture entire page
+            fullPage: true  // Capture entire page as-is
           });
+          
+          // Do some visual scrolling for UI effect (non-functional)
+          console.log(`[Worker ${workerId}] Performing visual scan effect...`);
+          
+          // Quick scroll down and up for visual effect only
+          await page.evaluate(() => {
+            // Smooth scroll to bottom
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+          });
+          await page.waitForTimeout(800);
+          
+          await page.evaluate(() => {
+            // Smooth scroll back to top
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          });
+          await page.waitForTimeout(500);
           
           // Convert to base64
           const base64Screenshot = screenshot.toString('base64');
