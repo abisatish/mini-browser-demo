@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import './LeadScanner.css';
 
 interface Lead {
@@ -10,29 +10,79 @@ interface Lead {
 }
 
 interface LeadScannerProps {
-  screenshot: string;
+  wsRef: React.MutableRefObject<WebSocket | null>;
   onClose: () => void;
 }
 
-export default function LeadScanner({ screenshot, onClose }: LeadScannerProps) {
+export default function LeadScanner({ wsRef, onClose }: LeadScannerProps) {
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const startScan = async () => {
-    setIsScanning(true);
-    setError(null);
-    setScanProgress(0);
+  // Listen for WebSocket messages
+  useEffect(() => {
+    if (!wsRef.current) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      if (typeof event.data === 'string') {
+        try {
+          const msg = JSON.parse(event.data);
+          
+          if (msg.type === 'leadsAnalysis') {
+            console.log('Received leads analysis:', msg);
+            
+            // Clear intervals
+            if ((window as any).__leadScannerInterval) {
+              clearInterval((window as any).__leadScannerInterval);
+            }
+            if ((window as any).__leadScannerTimeout) {
+              clearTimeout((window as any).__leadScannerTimeout);
+            }
+            
+            setScanProgress(100);
+            
+            if (msg.leads && msg.leads.length > 0) {
+              setLeads(msg.leads);
+            } else if (msg.error) {
+              setError(msg.error);
+            } else {
+              setError('No leads found on this page');
+            }
+            
+            setTimeout(() => {
+              setIsScanning(false);
+            }, 500);
+          }
+        } catch (err) {
+          console.error('Error parsing WebSocket message:', err);
+        }
+      }
+    };
+
+    wsRef.current.addEventListener('message', handleMessage);
     
-    // Check if screenshot exists
-    if (!screenshot || screenshot.length < 100) {
-      setError('No screenshot available. Please wait for the page to load.');
-      setIsScanning(false);
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.removeEventListener('message', handleMessage);
+      }
+    };
+  }, [wsRef]);
+
+  const startScan = () => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      setError('Connection lost. Please refresh the page.');
       return;
     }
 
-    console.log('Starting scan with screenshot length:', screenshot.length);
+    setIsScanning(true);
+    setError(null);
+    setScanProgress(0);
+    setLeads([]);
+    
+    // Send command to backend to scan leads
+    console.log('Sending scanLeads command via WebSocket');
+    wsRef.current.send(JSON.stringify({ cmd: 'scanLeads' }));
     
     // Animate progress
     const progressInterval = setInterval(() => {
@@ -45,38 +95,17 @@ export default function LeadScanner({ screenshot, onClose }: LeadScannerProps) {
       });
     }, 200);
 
-    try {
-      // Send screenshot to backend for AI processing
-      const response = await fetch('/api/scan-leads', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ screenshot }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to scan leads');
-      }
-
-      const data = await response.json();
+    // Set timeout for scan
+    const timeoutId = setTimeout(() => {
       clearInterval(progressInterval);
-      setScanProgress(100);
-      
-      if (data.leads && data.leads.length > 0) {
-        setLeads(data.leads);
-      } else {
-        setError('No leads found on this page');
-      }
-    } catch (err) {
-      clearInterval(progressInterval);
-      setError(err instanceof Error ? err.message : 'Failed to scan leads');
+      setError('Scan timed out. Please try again.');
+      setIsScanning(false);
       setScanProgress(0);
-    } finally {
-      setTimeout(() => {
-        setIsScanning(false);
-      }, 500);
-    }
+    }, 30000); // 30 second timeout
+
+    // Store intervals for cleanup
+    (window as any).__leadScannerInterval = progressInterval;
+    (window as any).__leadScannerTimeout = timeoutId;
   };
 
   const downloadCSV = () => {

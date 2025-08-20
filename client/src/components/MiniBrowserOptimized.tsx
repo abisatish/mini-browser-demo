@@ -6,6 +6,7 @@ import LeadScanner from './LeadScanner';
 
 export default function MiniBrowserOptimized() {
   const [img, setImg] = useState('');
+  const [imgBase64, setImgBase64] = useState(''); // Store base64 version for scanning
   const [url, setUrl] = useState('https://www.linkedin.com/sales/home');
   const [showMenu, setShowMenu] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
@@ -195,6 +196,14 @@ export default function MiniBrowserOptimized() {
         // Binary message (screenshot)
         const blob = new Blob([e.data], { type: 'image/jpeg' });
         const newImgUrl = URL.createObjectURL(blob);
+        
+        // Convert blob to base64 for scanning features
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64String = reader.result as string;
+          setImgBase64(base64String);
+        };
+        reader.readAsDataURL(blob);
         
         // Preload the image before swapping to avoid white flash
         const img = new Image();
@@ -576,7 +585,7 @@ export default function MiniBrowserOptimized() {
       {/* Lead Scanner Modal */}
       {showLeadScanner && (
         <LeadScanner
-          screenshot={img}
+          wsRef={wsRef}
           onClose={() => setShowLeadScanner(false)}
         />
       )}

@@ -356,6 +356,64 @@ async function executeBrowserCommand(browserId, command) {
         }
         break;
         
+      case 'scanLeads':
+        console.log(`[Worker ${workerId}] Starting Sales Navigator lead scan`);
+        
+        try {
+          const currentUrl = page.url();
+          
+          // Check if we're on Sales Navigator
+          if (!currentUrl.includes('linkedin.com/sales/')) {
+            response.type = 'leadsAnalysis';
+            response.error = 'Please navigate to LinkedIn Sales Navigator first';
+            break;
+          }
+          
+          // Take a screenshot of the current page
+          const screenshot = await page.screenshot({
+            type: 'jpeg',
+            quality: 90,
+            fullPage: false
+          });
+          
+          // Convert to base64
+          const base64Screenshot = screenshot.toString('base64');
+          const dataUrl = `data:image/jpeg;base64,${base64Screenshot}`;
+          
+          console.log(`[Worker ${workerId}] Screenshot captured, sending for analysis...`);
+          
+          // Import and use fetch
+          const fetch = (await import('node-fetch')).default;
+          
+          // Send to our API endpoint (use correct port)
+          const port = process.env.PORT || 3001;
+          const apiResponse = await fetch(`http://localhost:${port}/api/scan-leads`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ screenshot: dataUrl })
+          });
+          
+          const result = await apiResponse.json();
+          
+          response.type = 'leadsAnalysis';
+          if (result.leads && result.leads.length > 0) {
+            response.leads = result.leads;
+            console.log(`[Worker ${workerId}] Found ${result.leads.length} leads`);
+          } else if (result.error) {
+            response.error = result.error;
+          } else {
+            response.error = 'No leads found on this page';
+          }
+          
+        } catch (error) {
+          console.error(`[Worker ${workerId}] Lead scan error:`, error);
+          response.type = 'leadsAnalysis';
+          response.error = error.message || 'Failed to scan leads';
+        }
+        break;
+        
       case 'click':
         // Check current URL for potentially heavy pages
         const currentUrl = page.url();
