@@ -578,7 +578,6 @@ export default function MiniBrowserOptimized() {
         <LeadScanner
           screenshot={img}
           onClose={() => setShowLeadScanner(false)}
-          ws={wsRef.current}
         />
       )}
     </div>

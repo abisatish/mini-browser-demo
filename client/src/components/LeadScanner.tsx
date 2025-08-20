@@ -12,10 +12,9 @@ interface Lead {
 interface LeadScannerProps {
   screenshot: string;
   onClose: () => void;
-  ws: WebSocket | null;
 }
 
-export default function LeadScanner({ screenshot, onClose, ws }: LeadScannerProps) {
+export default function LeadScanner({ screenshot, onClose }: LeadScannerProps) {
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [leads, setLeads] = useState<Lead[]>([]);
