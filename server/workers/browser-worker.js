@@ -369,8 +369,8 @@ async function executeBrowserCommand(browserId, command) {
             break;
           }
           
-          // Set viewport to large height to capture more content
-          await page.setViewportSize({ width: 1280, height: 10000 }); // Same as what ProfileScanner would use
+          // Set viewport to large height but stay under Claude's 8000px limit
+          await page.setViewportSize({ width: 1280, height: 7500 }); // Max safe height for Claude API
           
           // Take the full page screenshot immediately
           console.log(`[Worker ${workerId}] Taking full page screenshot...`);
@@ -384,11 +384,12 @@ async function executeBrowserCommand(browserId, command) {
           
           console.log(`[Worker ${workerId}] Page dimensions - width: ${fullPageDimensions.width}px, height: ${fullPageDimensions.height}px, viewport: ${fullPageDimensions.viewportHeight}px`);
           
-          // Use same screenshot settings as ProfileScanner
+          // Take screenshot with Claude's dimension limits in mind
           const screenshot = await page.screenshot({
             type: 'jpeg',
             quality: 80,  // Same as ProfileScanner
-            fullPage: true  // Capture everything, same as ProfileScanner
+            fullPage: false,  // Don't use fullPage to control dimensions
+            clip: { x: 0, y: 0, width: 1280, height: 7500 }  // Explicit clip to stay under 8000px
           });
           
           console.log(`[Worker ${workerId}] Screenshot taken - size: ${screenshot.length} bytes`);
