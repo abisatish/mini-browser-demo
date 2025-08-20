@@ -694,6 +694,27 @@ async function startServer() {
         apiKey: process.env.ANTHROPIC_API_KEY
       });
 
+      // Process the screenshot - handle both data URL and raw base64
+      let base64Data;
+      if (screenshot.startsWith('data:')) {
+        // It's a data URL, extract the base64 part
+        const matches = screenshot.match(/^data:image\/[a-z]+;base64,(.+)$/);
+        if (!matches || !matches[1]) {
+          throw new Error('Invalid screenshot data URL format');
+        }
+        base64Data = matches[1];
+      } else {
+        // Assume it's already base64
+        base64Data = screenshot;
+      }
+
+      // Validate base64
+      if (!base64Data || base64Data.length < 100) {
+        throw new Error('Screenshot data is too short or invalid');
+      }
+
+      console.log(`Processing screenshot: ${base64Data.length} chars of base64 data`);
+
       // Send screenshot to Claude for analysis
       const response = await anthropic.messages.create({
         model: 'claude-3-haiku-20240307',
@@ -706,7 +727,7 @@ async function startServer() {
               source: {
                 type: 'base64',
                 media_type: 'image/jpeg',
-                data: screenshot.replace(/^data:image\/[a-z]+;base64,/, '')
+                data: base64Data
               }
             },
             {
