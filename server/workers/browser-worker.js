@@ -369,13 +369,13 @@ async function executeBrowserCommand(browserId, command) {
             break;
           }
           
-          // IMPORTANT: Set page viewport to large height to capture full page
-          await page.setViewportSize({ width: 1280, height: 10000 });
+          // Use same settings as ProfileScanner which works fine
+          // Don't need to change viewport for screenshot, fullPage handles it
           
           // Take the full page screenshot immediately
           console.log(`[Worker ${workerId}] Taking full page screenshot...`);
           
-          // Get the full page dimensions
+          // Get the full page dimensions for logging
           const fullPageDimensions = await page.evaluate(() => ({
             width: document.documentElement.scrollWidth,
             height: document.documentElement.scrollHeight,
@@ -384,12 +384,11 @@ async function executeBrowserCommand(browserId, command) {
           
           console.log(`[Worker ${workerId}] Page dimensions - width: ${fullPageDimensions.width}px, height: ${fullPageDimensions.height}px, viewport: ${fullPageDimensions.viewportHeight}px`);
           
-          // Force a full page screenshot with explicit dimensions
+          // Use same screenshot settings as ProfileScanner
           const screenshot = await page.screenshot({
             type: 'jpeg',
-            quality: 85,
-            fullPage: true,  // This SHOULD capture everything
-            captureBeyondViewport: true  // Explicitly capture beyond viewport
+            quality: 80,  // Same as ProfileScanner
+            fullPage: true  // Capture everything, same as ProfileScanner
           });
           
           console.log(`[Worker ${workerId}] Screenshot taken - size: ${screenshot.length} bytes`);
@@ -440,9 +439,9 @@ async function executeBrowserCommand(browserId, command) {
             apiKey: process.env.ANTHROPIC_API_KEY
           });
           
-          // Send screenshot to Claude for analysis
+          // Send screenshot to Claude for analysis (using same model as ProfileScanner)
           const aiResponse = await anthropic.messages.create({
-            model: 'claude-3-haiku-20240307',
+            model: 'claude-3-5-sonnet-20241022',  // Same model as ProfileScanner
             max_tokens: 2000,
             messages: [{
               role: 'user',
@@ -502,9 +501,6 @@ If you cannot see any leads, return: []`
           console.error(`[Worker ${workerId}] Lead scan error:`, error);
           response.type = 'leadsAnalysis';
           response.error = error.message || 'Failed to scan leads';
-        } finally {
-          // Reset viewport back to normal
-          await page.setViewportSize({ width: 1280, height: 720 });
         }
         break;
         
