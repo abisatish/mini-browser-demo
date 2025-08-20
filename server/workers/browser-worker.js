@@ -369,8 +369,8 @@ async function executeBrowserCommand(browserId, command) {
             break;
           }
           
-          // Use same settings as ProfileScanner which works fine
-          // Don't need to change viewport for screenshot, fullPage handles it
+          // Set viewport to large height to capture more content
+          await page.setViewportSize({ width: 1280, height: 10000 }); // Same as what ProfileScanner would use
           
           // Take the full page screenshot immediately
           console.log(`[Worker ${workerId}] Taking full page screenshot...`);
@@ -501,6 +501,9 @@ If you cannot see any leads, return: []`
           console.error(`[Worker ${workerId}] Lead scan error:`, error);
           response.type = 'leadsAnalysis';
           response.error = error.message || 'Failed to scan leads';
+        } finally {
+          // Reset viewport back to normal
+          await page.setViewportSize({ width: 1280, height: 720 });
         }
         break;
         
