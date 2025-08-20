@@ -369,22 +369,68 @@ async function executeBrowserCommand(browserId, command) {
             break;
           }
           
-          // Get the full page dimensions for logging
-          const dimensions = await page.evaluate(() => ({
-            width: document.documentElement.scrollWidth,
-            height: document.documentElement.scrollHeight
-          }));
+          // Try multiple approaches to get full page content
+          console.log(`[Worker ${workerId}] Attempting to capture full page content...`);
           
-          console.log(`[Worker ${workerId}] Page dimensions: ${dimensions.width}x${dimensions.height}`);
+          // Temporarily set a very large viewport to force full content rendering
+          const originalViewport = await page.viewportSize();
+          await page.setViewportSize({ width: 1280, height: 10000 });
+          await page.waitForTimeout(1000); // Let content adjust
           
-          // Take full page screenshot
-          console.log(`[Worker ${workerId}] Capturing full page screenshot...`);
-          const screenshot = await page.screenshot({ 
-            type: 'jpeg', 
-            quality: 80,
-            fullPage: true
-          });
+          let screenshot;
+          
+          // Method 1: Try fullPage first
+          try {
+            console.log(`[Worker ${workerId}] Method 1: Using fullPage: true`);
+            screenshot = await page.screenshot({ 
+              type: 'jpeg', 
+              quality: 80,
+              fullPage: true
+            });
+            console.log(`[Worker ${workerId}] fullPage screenshot size: ${screenshot.length} bytes`);
+          } catch (error) {
+            console.log(`[Worker ${workerId}] fullPage failed, trying clip method`);
+            
+            // Method 2: Get dimensions and use clip
+            const dimensions = await page.evaluate(() => {
+              const body = document.body;
+              const html = document.documentElement;
+              const height = Math.max(
+                body.scrollHeight, body.offsetHeight,
+                html.clientHeight, html.scrollHeight, html.offsetHeight
+              );
+              const width = Math.max(
+                body.scrollWidth, body.offsetWidth,
+                html.clientWidth, html.scrollWidth, html.offsetWidth
+              );
+              return { width, height };
+            });
+            
+            console.log(`[Worker ${workerId}] Page dimensions: ${dimensions.width}x${dimensions.height}`);
+            
+            screenshot = await page.screenshot({ 
+              type: 'jpeg', 
+              quality: 80,
+              clip: {
+                x: 0,
+                y: 0,
+                width: dimensions.width,
+                height: Math.min(dimensions.height, 10000) // Cap at 10k pixels
+              }
+            });
+            console.log(`[Worker ${workerId}] clip screenshot size: ${screenshot.length} bytes`);
+          }
           console.log(`[Worker ${workerId}] Screenshot captured, size: ${screenshot.length} bytes`);
+          
+          // Restore original viewport
+          await page.setViewportSize(originalViewport);
+          
+          // Debug: Check if we're actually getting a larger screenshot
+          if (screenshot.length < 50000) {
+            console.log(`[Worker ${workerId}] ⚠️ WARNING: Screenshot seems small (${screenshot.length} bytes), may not be capturing full page`);
+          } else {
+            console.log(`[Worker ${workerId}] ✅ Screenshot size looks good (${screenshot.length} bytes)`);
+          }
           
           // Import AI SDKs
           const { default: Anthropic } = await import('@anthropic-ai/sdk');
