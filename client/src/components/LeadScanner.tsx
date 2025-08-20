@@ -5,8 +5,6 @@ interface Lead {
   name: string;
   title: string;
   company: string;
-  location?: string;
-  dateAdded?: string;
 }
 
 interface LeadScannerProps {
@@ -112,16 +110,14 @@ export default function LeadScanner({ wsRef, onClose }: LeadScannerProps) {
     if (leads.length === 0) return;
 
     // Create CSV content
-    const headers = ['Name', 'Title', 'Company', 'Location', 'Date Added'];
+    const headers = ['Name', 'Title', 'Company'];
     const csvContent = [
       headers.join(','),
       ...leads.map(lead => 
         [
           `"${lead.name}"`,
           `"${lead.title || ''}"`,
-          `"${lead.company || ''}"`,
-          `"${lead.location || ''}"`,
-          `"${lead.dateAdded || ''}"`
+          `"${lead.company || ''}"`
         ].join(',')
       )
     ].join('\n');
@@ -149,13 +145,13 @@ export default function LeadScanner({ wsRef, onClose }: LeadScannerProps) {
         </h2>
         
         <p className="lead-scanner-description">
-          Extract all visible leads from the current Sales Navigator page into a CSV file.
+          Extract all leads from the entire Sales Navigator page (including content below the fold) into a CSV file.
         </p>
 
         {!isScanning && leads.length === 0 && (
           <button className="lead-scanner-button" onClick={startScan}>
             <span className="button-icon">🔍</span>
-            Scan Page for Leads
+            Scan Full Page for Leads
           </button>
         )}
 
@@ -174,10 +170,10 @@ export default function LeadScanner({ wsRef, onClose }: LeadScannerProps) {
               <div className="progress-bar" style={{ width: `${scanProgress}%` }}></div>
             </div>
             <p className="scan-status">
-              {scanProgress < 20 && "📸 Capturing page..."}
-              {scanProgress >= 20 && scanProgress < 40 && "🔍 Scanning leads..."}
-              {scanProgress >= 40 && scanProgress < 60 && "📝 Extracting names..."}
-              {scanProgress >= 60 && scanProgress < 80 && "🏢 Processing companies..."}
+              {scanProgress < 20 && "📸 Capturing full page..."}
+              {scanProgress >= 20 && scanProgress < 40 && "🔍 Scanning all leads..."}
+              {scanProgress >= 40 && scanProgress < 60 && "📝 Extracting data..."}
+              {scanProgress >= 60 && scanProgress < 80 && "🏢 Processing details..."}
               {scanProgress >= 80 && "✨ Finalizing results..."}
               {" "}{scanProgress}%
             </p>

@@ -747,9 +747,7 @@ async function startServer() {
 For each person/lead visible, extract:
 - name: Their full name
 - title: Their job title/position
-- company: Their company name (may be shown as part of location or separately)
-- location: City, State/Country if shown
-- dateAdded: The date added if visible (like "8/20/2025")
+- company: Their company name
 
 Important: 
 - Look for the table/list of people with profile pictures
@@ -757,7 +755,7 @@ Important:
 - Extract ALL visible leads, not just the first one
 
 Return ONLY a valid JSON array. Example format:
-[{"name": "Evan Rama", "title": "Founder & CEO", "company": "Company Name", "location": "Austin, Texas", "dateAdded": "8/20/2025"}]
+[{"name": "Evan Rama", "title": "Founder & CEO", "company": "Company Name"}]
 
 If you cannot see any leads, return: []`
             }

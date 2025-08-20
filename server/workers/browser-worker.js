@@ -369,7 +369,7 @@ async function executeBrowserCommand(browserId, command) {
             break;
           }
           
-          // Get the full page dimensions
+          // Get the full page dimensions for logging
           const dimensions = await page.evaluate(() => ({
             width: document.documentElement.scrollWidth,
             height: document.documentElement.scrollHeight
@@ -377,17 +377,12 @@ async function executeBrowserCommand(browserId, command) {
           
           console.log(`[Worker ${workerId}] Page dimensions: ${dimensions.width}x${dimensions.height}`);
           
-          // Take screenshot with explicit clip to capture full page
+          // Take full page screenshot
           console.log(`[Worker ${workerId}] Capturing full page screenshot...`);
           const screenshot = await page.screenshot({ 
             type: 'jpeg', 
             quality: 80,
-            clip: {
-              x: 0,
-              y: 0,
-              width: dimensions.width,
-              height: Math.min(dimensions.height, 7500) // Cap at 7500px for Claude API limit
-            }
+            fullPage: true
           });
           console.log(`[Worker ${workerId}] Screenshot captured, size: ${screenshot.length} bytes`);
           
@@ -430,15 +425,22 @@ async function executeBrowserCommand(browserId, command) {
                   content: [
                     {
                       type: "text",
-                      text: `Analyze this LinkedIn Sales Navigator screenshot and extract lead information. Return ONLY a JSON array with these fields:
-[
-  {
-    "name": "person's full name",
-    "title": "current job title",
-    "company": "current employer"
-  }
-]
-Extract ALL visible leads/people from the Sales Navigator list. Use "Not available" for fields not visible. Return only the JSON array, no other text.`
+                      text: `Look at this LinkedIn Sales Navigator screenshot. Extract information for ALL visible leads/people shown in the list.
+
+For each person/lead visible, extract:
+- name: Their full name
+- title: Their job title/position
+- company: Their company name
+
+Important: 
+- Look for the table/list of people with profile pictures
+- Each row is a different lead
+- Extract ALL visible leads, not just the first one
+
+Return ONLY a valid JSON array. Example format:
+[{"name": "Evan Rama", "title": "Founder & CEO", "company": "Company Name"}]
+
+If you cannot see any leads, return: []`
                     },
                     {
                       type: "image",
@@ -482,8 +484,8 @@ Extract ALL visible leads/people from the Sales Navigator list. Use "Not availab
           
           // Parse response (following exact pattern from extractLinkedInDataFromScreenshot)
           try {
-            const jsonMatch = content.match(/```json\n?([\s\S]*?)\n?```/) || [null, content];
-            const jsonString = jsonMatch[1] || content;
+            const jsonMatch = content.match(/\[[\s\S]*\]/) || [null, content];
+            const jsonString = jsonMatch[0] || content;
             const leads = JSON.parse(jsonString.trim());
             
             console.log(`[Worker ${workerId}] 🔵 API: Successfully parsed ${leads.length} leads`);
