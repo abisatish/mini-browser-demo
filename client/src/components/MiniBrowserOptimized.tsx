@@ -17,14 +17,14 @@ export default function MiniBrowserOptimized() {
   const [searchResults, setSearchResults] = useState<any[]>([
     {
       title: 'Pratyush Chakraborty LinkedIn profile',
-      link: 'https://www.linkedin.com/in/pratyush-chakraborty-4a0656213/',
+      link: 'https://www.linkedin.com/sales/home',
       snippet: 'Pratyush Chakraborty - Facebook, LinkedIn - MathEcon + AI @ Penn',
       source: 'linkedin',
       favicon: null
     },
     {
       title: 'Pratyush Chakraborty Waymo LinkedIn profile',
-      link: 'https://www.linkedin.com/in/pratyush-chakraborty',
+      link: 'https://www.linkedin.com/sales/home',
       snippet: 'Pratyush Chakraborty - Facebook, LinkedIn - @ Waymo',
       source: 'linkedin',
       favicon: null
@@ -52,7 +52,7 @@ export default function MiniBrowserOptimized() {
     },
     {
       title: 'Pratyush Chakraborty, Ph.D.\'s Post - LinkedIn',
-      link: 'https://www.linkedin.com/posts/pratyush-chakraborty',
+      link: 'https://www.linkedin.com/sales/home',
       snippet: 'View recent posts and updates from Pratyush Chakraborty on LinkedIn professional network.',
       source: 'linkedin',
       favicon: null
