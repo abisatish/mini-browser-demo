@@ -468,7 +468,7 @@ If you cannot find any people/profiles, return: []`
         break;
         
       case 'scanProfile':
-        console.log(`[Worker ${workerId}] Starting profile scan with scrolling capture`);
+        console.log(`[Worker ${workerId}] Starting profile scan with full page capture`);
         
         try {
           const currentUrl = page.url();
@@ -477,224 +477,52 @@ If you cannot find any people/profiles, return: []`
           // Wait a bit for page to fully load
           await page.waitForTimeout(1000);
           
-          // Check what kind of page we're on and find the scroll container
+          // Get page info for logging
           const pageInfo = await page.evaluate(() => {
-            // Check for LinkedIn Sales Navigator table structure
-            const leadsTable = document.querySelector('table tbody');
             const leadsRows = document.querySelectorAll('tr[data-x--people-list--row]');
-            const scrollableMain = document.querySelector('main.scaffold-layout__main');
-            
-            // Find the actual scrollable element - Sales Navigator often uses the main element
-            let scrollElement = document.documentElement;
-            let scrollContainer = 'document';
-            
-            // Check common Sales Navigator scroll containers
-            const possibleContainers = [
-              'main.scaffold-layout__main',
-              '.application-outlet__content',
-              '[data-x--infinite-scroll-container]',
-              '.scaffold-layout__list',
-              'main'
-            ];
-            
-            for (const selector of possibleContainers) {
-              const elem = document.querySelector(selector);
-              if (elem) {
-                const style = window.getComputedStyle(elem);
-                if (style.overflowY === 'auto' || style.overflowY === 'scroll' || elem.scrollHeight > elem.clientHeight) {
-                  scrollElement = elem;
-                  scrollContainer = selector;
-                  break;
-                }
-              }
-            }
-            
-            // If still using document, check if body or html has scroll
-            if (scrollContainer === 'document') {
-              const bodyStyle = window.getComputedStyle(document.body);
-              const htmlStyle = window.getComputedStyle(document.documentElement);
-              
-              if (bodyStyle.overflowY === 'auto' || bodyStyle.overflowY === 'scroll') {
-                scrollContainer = 'body';
-                scrollElement = document.body;
-              }
-            }
+            const scrollHeight = document.documentElement.scrollHeight;
+            const viewportHeight = window.innerHeight;
             
             return {
-              hasLeadsTable: !!leadsTable,
-              currentLeadCount: leadsRows.length,
-              hasScrollableMain: !!scrollableMain,
-              scrollContainer,
-              initialHeight: scrollElement.scrollHeight || document.documentElement.scrollHeight,
-              clientHeight: scrollElement.clientHeight || window.innerHeight,
-              viewportHeight: window.innerHeight,
-              url: window.location.href,
-              overflow: scrollElement ? window.getComputedStyle(scrollElement).overflowY : 'visible'
+              leadCount: leadsRows.length,
+              scrollHeight,
+              viewportHeight,
+              url: window.location.href
             };
           });
           
-          console.log(`[Worker ${workerId}] Page info:`, pageInfo);
+          console.log(`[Worker ${workerId}] Page info: ${pageInfo.leadCount} leads, height: ${pageInfo.scrollHeight}px, viewport: ${pageInfo.viewportHeight}px`);
           
-          const screenshots = [];
-          const MAX_SCREENSHOTS = 10;
-          
-          // Scroll to top first
-          await page.evaluate((container) => {
-            if (container === 'document') {
-              window.scrollTo(0, 0);
-            } else if (container === 'body') {
-              document.body.scrollTop = 0;
-            } else {
-              const elem = document.querySelector(container);
-              if (elem) elem.scrollTop = 0;
-            }
-          }, pageInfo.scrollContainer);
-          await page.waitForTimeout(200);
-          
-          console.log(`[Worker ${workerId}] Starting dynamic scroll capture on container: ${pageInfo.scrollContainer}...`);
-          
-          // Keep scrolling until we hit the real bottom or max screenshots
-          let previousLeadCount = pageInfo.currentLeadCount;
-          let sameLeadCountAttempts = 0;
-          let screenshotNumber = 0;
-          
-          // Take initial screenshot before any scrolling
-          const initialScreenshot = await page.screenshot({ 
+          // Take FULL PAGE screenshot - captures entire 2688px or whatever the full height is
+          console.log(`[Worker ${workerId}] Capturing full page screenshot (expected height: ${pageInfo.scrollHeight}px)...`);
+          const fullPageScreenshot = await page.screenshot({ 
             type: 'jpeg', 
-            quality: 60,
-            fullPage: false
+            quality: 80,
+            fullPage: true  // This captures the ENTIRE page height
           });
-          screenshots.push(initialScreenshot);
-          screenshotNumber++;
-          console.log(`[Worker ${workerId}] Captured initial screenshot ${screenshotNumber}, size: ${initialScreenshot.length} bytes`);
           
-          for (let i = 0; i < MAX_SCREENSHOTS - 1; i++) {  // -1 because we already took initial screenshot
-            
-            // LinkedIn Sales Nav uses virtual scrolling - we need to scroll the table wrapper
-            const scrollInfo = await page.evaluate(() => {
-              // Find all lead rows
-              const leadRows = document.querySelectorAll('tr[data-x--people-list--row]');
-              const leadCountBefore = leadRows.length;
-              
-              // Find the scrollable container - it's the table wrapper
-              const tableWrapper = document.querySelector('.models-table-wrapper');
-              const table = document.querySelector('table.people-list-detail__table');
-              
-              let scrolled = false;
-              let currentScroll = 0;
-              let scrollHeight = 0;
-              
-              if (tableWrapper) {
-                // The table wrapper is the scrollable element
-                const beforeScroll = tableWrapper.scrollTop;
-                tableWrapper.scrollTop = tableWrapper.scrollTop + window.innerHeight * 0.8;
-                currentScroll = tableWrapper.scrollTop;
-                scrollHeight = tableWrapper.scrollHeight;
-                scrolled = true;
-              } else if (table) {
-                // Try scrolling the last row into view
-                const lastLead = leadRows[leadRows.length - 1];
-                if (lastLead) {
-                  lastLead.scrollIntoView({ behavior: 'instant', block: 'end' });
-                  scrolled = true;
-                }
-                currentScroll = window.pageYOffset || document.documentElement.scrollTop || 0;
-                scrollHeight = document.documentElement.scrollHeight;
-              } else {
-                // Fallback to window scroll
-                window.scrollBy(0, window.innerHeight * 0.8);
-                currentScroll = window.pageYOffset || document.documentElement.scrollTop || 0;
-                scrollHeight = document.documentElement.scrollHeight;
-              }
-              
-              const viewportHeight = window.innerHeight;
-              
-              // Check if there's a "load more" button or spinner
-              const loadMoreButton = document.querySelector('button[aria-label*="Load more"]');
-              const spinner = document.querySelector('.artdeco-spinner');
-              const hasMoreIndicator = !!loadMoreButton || !!spinner;
-              
-              return {
-                leadCountBefore,
-                scrolledTo: currentScroll,
-                scrollHeight,
-                viewportHeight,
-                hasTableWrapper: !!tableWrapper,
-                scrolled,
-                hasMoreIndicator,
-                lastLeadIndex: leadRows.length - 1
-              };
-            });
-            
-            console.log(`[Worker ${workerId}] Scroll ${i + 1}: ${scrollInfo.leadCountBefore} leads visible, scrolled to ${scrollInfo.scrolledTo}px, height: ${scrollInfo.scrollHeight}px, has more: ${scrollInfo.hasMoreIndicator}`);
-            
-            // Wait longer for LinkedIn to load new content
-            await page.waitForTimeout(1000);
-            
-            // Check if new leads were loaded
-            const newLeadCount = await page.evaluate(() => {
-              return document.querySelectorAll('tr[data-x--people-list--row]').length;
-            });
-            
-            console.log(`[Worker ${workerId}] After wait: ${newLeadCount} leads (was ${scrollInfo.leadCountBefore})`);
-            
-            if (newLeadCount === previousLeadCount) {
-              sameLeadCountAttempts++;
-              console.log(`[Worker ${workerId}] No new leads loaded (${sameLeadCountAttempts}/3 attempts)`);
-              
-              // Try clicking "Load more" button if it exists
-              const clickedLoadMore = await page.evaluate(() => {
-                const loadMoreButton = document.querySelector('button[aria-label*="Load more"], button:has-text("Show more")');
-                if (loadMoreButton) {
-                  loadMoreButton.click();
-                  return true;
-                }
-                return false;
-              });
-              
-              if (clickedLoadMore) {
-                console.log(`[Worker ${workerId}] Clicked 'Load more' button, waiting...`);
-                await page.waitForTimeout(2000);
-                // Re-check lead count after clicking load more
-                const afterClickCount = await page.evaluate(() => {
-                  return document.querySelectorAll('tr[data-x--people-list--row]').length;
-                });
-                if (afterClickCount > newLeadCount) {
-                  newLeadCount = afterClickCount;
-                  sameLeadCountAttempts = 0;
-                  console.log(`[Worker ${workerId}] Load more button loaded ${afterClickCount - previousLeadCount} new leads`);
-                }
-              }
-            } else {
-              sameLeadCountAttempts = 0;
-              console.log(`[Worker ${workerId}] Loaded ${newLeadCount - previousLeadCount} new leads`);
-            }
-            
-            // Take screenshot ONLY if new leads were loaded
-            if (newLeadCount > previousLeadCount) {
-              const screenshot = await page.screenshot({ 
-                type: 'jpeg', 
-                quality: 60,
-                fullPage: false
-              });
-              screenshots.push(screenshot);
-              screenshotNumber++;
-              console.log(`[Worker ${workerId}] Captured screenshot ${screenshotNumber} after loading ${newLeadCount - previousLeadCount} new leads, size: ${screenshot.length} bytes`);
-            }
-            
-            previousLeadCount = newLeadCount;
-            
-            // Stop if no new leads after 3 attempts
-            if (sameLeadCountAttempts >= 3) {
-              console.log(`[Worker ${workerId}] No more leads to load. Stopping.`);
-              break;
-            }
-          }
+          // Get the actual dimensions of the screenshot
+          // JPEG doesn't have easy dimension access, but we can estimate based on viewport width
+          const screenshotInfo = {
+            bytes: fullPageScreenshot.length,
+            expectedHeight: pageInfo.scrollHeight,
+            viewportHeight: pageInfo.viewportHeight,
+            viewportWidth: 1280,  // We set this to 1280 in browser config
+            estimatedPixels: pageInfo.scrollHeight * 1280
+          };
           
-          // Scroll back to top
+          console.log(`[Worker ${workerId}] ✅ Full page screenshot captured:`);
+          console.log(`[Worker ${workerId}]   - File size: ${screenshotInfo.bytes} bytes`);
+          console.log(`[Worker ${workerId}]   - Expected dimensions: ${screenshotInfo.viewportWidth}px wide x ${screenshotInfo.expectedHeight}px tall`);
+          console.log(`[Worker ${workerId}]   - Total pixels captured: ~${(screenshotInfo.estimatedPixels / 1000000).toFixed(1)} megapixels`);
+          console.log(`[Worker ${workerId}]   - Page had ${pageInfo.leadCount} leads visible`);
+          
+          const screenshots = [fullPageScreenshot];
+          
+          // Scroll back to top after capture
           await page.evaluate(() => window.scrollTo(0, 0));
           
-          console.log(`[Worker ${workerId}] Total screenshots captured: ${screenshots.length}, total size: ${screenshots.reduce((sum, s) => sum + s.length, 0)} bytes`);
+          console.log(`[Worker ${workerId}] Full page capture complete`);
           
           // Import AI SDKs
           const { default: Anthropic } = await import('@anthropic-ai/sdk');
