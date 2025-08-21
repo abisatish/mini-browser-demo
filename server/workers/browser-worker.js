@@ -598,10 +598,16 @@ If you cannot find any people/profiles, return: []`;
               const cleanJson = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
               const extractedLeads = JSON.parse(cleanJson);
               
-              console.log(`[Worker ${workerId}] 🔵 API: Extracted ${extractedLeads.length} leads from screenshot ${i + 1}`);
+              console.log(`[Worker ${workerId}] 🔵 API: Extracted ${extractedLeads.length} leads from screenshot ${i + 1}:`);
+              
+              // Log each lead found
+              extractedLeads.forEach((lead, idx) => {
+                console.log(`[Worker ${workerId}]     Lead ${idx + 1}: ${lead.name} - ${lead.title} at ${lead.company}`);
+              });
               
               // Add to our collection
               allExtractedLeads.push(...extractedLeads);
+              console.log(`[Worker ${workerId}] 🔵 API: Total leads so far: ${allExtractedLeads.length}`);
               
               // Small delay between API calls to avoid overloading
               if (i < NUM_SCROLLS - 1) {
@@ -726,6 +732,13 @@ If you cannot find any people/profiles, return: []`;
           }
           
           console.log(`[Worker ${workerId}] De-duplication complete: ${uniqueLeads.length} unique leads from ${allExtractedLeads.length} total`);
+          
+          console.log(`[Worker ${workerId}] ============================================`);
+          console.log(`[Worker ${workerId}] FINAL UNIQUE LEADS:`);
+          uniqueLeads.forEach((lead, idx) => {
+            console.log(`[Worker ${workerId}]   ${idx + 1}. ${lead.name} - ${lead.title} at ${lead.company}`);
+          });
+          console.log(`[Worker ${workerId}] ============================================`);
           
           // Scroll back to top after capture
           await page.evaluate(() => window.scrollTo(0, 0));
