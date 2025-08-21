@@ -507,8 +507,17 @@ If you cannot find any people/profiles, return: []`
           for (let i = 0; i < totalScrolls; i++) {
             const scrollPosition = i * scrollStep;
             
-            // Scroll to position
-            await page.evaluate((pos) => window.scrollTo(0, pos), scrollPosition);
+            // Scroll to position and verify it actually scrolled
+            const actualScroll = await page.evaluate((pos) => {
+              window.scrollTo(0, pos);
+              return {
+                requestedScroll: pos,
+                actualScroll: window.pageYOffset || document.documentElement.scrollTop,
+                maxScroll: document.documentElement.scrollHeight - window.innerHeight
+              };
+            }, scrollPosition);
+            
+            console.log(`[Worker ${workerId}] Scroll ${i + 1}: requested ${actualScroll.requestedScroll}px, actual ${actualScroll.actualScroll}px, max ${actualScroll.maxScroll}px`);
             
             // Minimal wait for content to render
             await page.waitForTimeout(150);
