@@ -489,8 +489,21 @@ If you cannot find any people/profiles, return: []`
           console.log(`[Worker ${workerId}] Number of scrolls: ${NUM_SCROLLS}`);
           console.log(`[Worker ${workerId}] ============================================`);
           
-          // Array to hold all screenshots
-          const scrollScreenshots = [];
+          // Import AI SDKs early so we can use Claude in the loop
+          const { default: Anthropic } = await import('@anthropic-ai/sdk');
+          const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({
+            apiKey: process.env.ANTHROPIC_API_KEY
+          }) : null;
+          
+          if (!anthropic) {
+            console.log(`[Worker ${workerId}] No AI client configured`);
+            response.type = 'profileAnalysis';
+            response.error = 'No AI client configured (need Anthropic API key)';
+            break;
+          }
+          
+          // Array to hold all extracted leads from each Claude call
+          const allExtractedLeads = [];
           
           // Start at top
           await page.evaluate(() => {
@@ -535,19 +548,75 @@ If you cannot find any people/profiles, return: []`
               fullPage: false  // Just viewport at current scroll position
             });
             
-            scrollScreenshots.push({
-              scrollPosition: scrollState.scrollY,
-              screenshot: screenshot,
-              leadCount: scrollState.visibleLeads,
-              documentHeight: scrollState.documentHeight
-            });
-            
             console.log(`[Worker ${workerId}]   - Screenshot ${i + 1} captured (${(screenshot.length / 1024).toFixed(2)} KB)`);
+            
+            // Send this screenshot to Claude immediately
+            console.log(`[Worker ${workerId}] 🔵 API: Sending screenshot ${i + 1} to Claude...`);
+            
+            try {
+              const prompt = `Look at this screenshot and extract information about any people/profiles visible.
+
+For each person visible, extract:
+- name: Their full name
+- title: Their job title/position (or "Not available" if not shown)
+- company: Their company/organization (or "Not available" if not shown)
+
+Extract ALL people visible in the screenshot.
+
+Return ONLY a valid JSON array. Example format:
+[{"name": "John Doe", "title": "Software Engineer", "company": "Tech Corp"}]
+
+If you cannot find any people/profiles, return: []`;
+              
+              const claudeResponse = await anthropic.messages.create({
+                model: "claude-3-5-sonnet-20241022",
+                max_tokens: 1000,
+                temperature: 0.3,
+                messages: [{
+                  role: "user",
+                  content: [
+                    {
+                      type: "text",
+                      text: prompt
+                    },
+                    {
+                      type: "image",
+                      source: {
+                        type: "base64",
+                        media_type: "image/jpeg",
+                        data: screenshot.toString('base64')
+                      }
+                    }
+                  ]
+                }]
+              });
+              
+              const responseText = claudeResponse.content[0].text.trim();
+              console.log(`[Worker ${workerId}] 🔵 API: Claude response for screenshot ${i + 1} received`);
+              
+              // Parse the response
+              const cleanJson = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+              const extractedLeads = JSON.parse(cleanJson);
+              
+              console.log(`[Worker ${workerId}] 🔵 API: Extracted ${extractedLeads.length} leads from screenshot ${i + 1}`);
+              
+              // Add to our collection
+              allExtractedLeads.push(...extractedLeads);
+              
+              // Small delay between API calls to avoid overloading
+              if (i < NUM_SCROLLS - 1) {
+                await page.waitForTimeout(1000);
+              }
+              
+            } catch (error) {
+              console.error(`[Worker ${workerId}] 🔵 API: Error with Claude for screenshot ${i + 1}:`, error.message);
+              // Continue with next screenshot even if this one fails
+            }
           }
           
           console.log(`[Worker ${workerId}] ============================================`);
-          console.log(`[Worker ${workerId}] SCROLLING COMPLETE:`);
-          console.log(`[Worker ${workerId}] Total screenshots taken: ${scrollScreenshots.length}`);
+          console.log(`[Worker ${workerId}] ALL CLAUDE CALLS COMPLETE:`);
+          console.log(`[Worker ${workerId}] Total leads extracted: ${allExtractedLeads.length}`);
           console.log(`[Worker ${workerId}] ============================================`);
           
           // Scroll back to top for final full-page capture
@@ -645,106 +714,33 @@ If you cannot find any people/profiles, return: []`
           console.log(`[Worker ${workerId}]   - Page had ${pageInfo.leadCount} leads visible`);
           console.log(`[Worker ${workerId}]   - Bytes per pixel: ${(screenshotInfo.bytes / screenshotInfo.actualPixels).toFixed(3)}`);
           
-          // Use the 4 scroll screenshots instead of the full page screenshot
-          const screenshots = scrollScreenshots.map(s => s.screenshot);
+          // Remove duplicates from allExtractedLeads based on name
+          const uniqueLeads = [];
+          const seenNames = new Set();
+          
+          for (const lead of allExtractedLeads) {
+            if (!seenNames.has(lead.name)) {
+              seenNames.add(lead.name);
+              uniqueLeads.push(lead);
+            }
+          }
+          
+          console.log(`[Worker ${workerId}] De-duplication complete: ${uniqueLeads.length} unique leads from ${allExtractedLeads.length} total`);
           
           // Scroll back to top after capture
           await page.evaluate(() => window.scrollTo(0, 0));
           
-          console.log(`[Worker ${workerId}] Using ${scrollScreenshots.length} scroll screenshots for analysis`);
-          
-          // Import AI SDKs
-          const { default: Anthropic } = await import('@anthropic-ai/sdk');
-          const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({
-            apiKey: process.env.ANTHROPIC_API_KEY
-          }) : null;
-          
-          if (!anthropic) {
-            console.log(`[Worker ${workerId}] No AI client configured`);
-            response.type = 'profileAnalysis';
-            response.error = 'No AI client configured (need Anthropic API key)';
-            break;
-          }
-          
-          console.log(`[Worker ${workerId}] 🔵 API: Using Claude for profile analysis`);
-          
-          const prompt = `Look at this screenshot and extract information about any people/profiles visible.
-
-For each person visible, extract:
-- name: Their full name
-- title: Their job title/position (or "Not available" if not shown)
-- company: Their company/organization (or "Not available" if not shown)
-
-Extract ALL people visible in the screenshot, whether it's one person or many.
-
-Return ONLY a valid JSON array. Example format:
-[{"name": "John Doe", "title": "Software Engineer", "company": "Tech Corp"}]
-
-If you cannot find any people/profiles, return: []`;
-          
           try {
-            console.log(`[Worker ${workerId}] 🔵 API: Preparing Claude request with ${screenshots.length} screenshots...`);
-            const startTime = Date.now();
-            
-            // Build content array with text prompt followed by all screenshots
-            const contentArray = [
-              {
-                type: "text",
-                text: prompt + "\n\nI'm showing you multiple screenshots from scrolling through the page. Extract ALL unique people you see across all screenshots. Don't duplicate if you see the same person multiple times."
-              }
-            ];
-            
-            // Add each screenshot as an image
-            for (let i = 0; i < screenshots.length; i++) {
-              contentArray.push({
-                type: "image",
-                source: {
-                  type: "base64",
-                  media_type: "image/jpeg",
-                  data: screenshots[i].toString('base64')
-                }
-              });
-            }
-            
-            const claudeResponse = await anthropic.messages.create({
-              model: "claude-3-5-sonnet-20241022",
-              max_tokens: 2000, // Increased for more results
-              temperature: 0.3,
-              messages: [{
-                role: "user",
-                content: contentArray
-              }]
-            });
-            
-            const endTime = Date.now();
-            console.log(`[Worker ${workerId}] 🔵 API: Claude API call completed in:`, endTime - startTime, 'ms');
-            
-            const content = claudeResponse.content[0].text;
-            console.log(`[Worker ${workerId}] 🔵 API: Claude extracted profile text:`, content);
-            
-            // Parse response (now expecting an array of leads)
-            try {
-              const jsonMatch = content.match(/\[[\s\S]*\]/) || [null, content];
-              const jsonString = jsonMatch[0] || content;
-              const leads = JSON.parse(jsonString.trim());
-              
-              console.log(`[Worker ${workerId}] 🔵 API: Successfully parsed ${leads.length} leads from profile scan`);
-              response.type = 'profileAnalysis';
-              response.leads = leads;  // Changed from profileData to leads
-              response.rawAnalysis = content;
-              
-            } catch (e) {
-              console.error(`[Worker ${workerId}] 🔵 API: Failed to parse Claude response:`, content);
-              response.type = 'profileAnalysis';
-              response.leads = [];  // Changed from profileData to leads
-              response.rawAnalysis = content;
-            }
-            
-          } catch (claudeError) {
-            console.error(`[Worker ${workerId}] 🔵 API: Claude error occurred`);
-            console.error(`[Worker ${workerId}] 🔵 API: Error message:`, claudeError.message);
+            // Send the final combined results
+            console.log(`[Worker ${workerId}] Sending final results with ${uniqueLeads.length} unique leads`);
             response.type = 'profileAnalysis';
-            response.error = claudeError.message || 'Failed to analyze profile';
+            response.leads = uniqueLeads;
+            response.rawAnalysis = `Extracted ${uniqueLeads.length} unique leads from ${NUM_SCROLLS} screenshots`;
+            
+          } catch (error) {
+            console.error(`[Worker ${workerId}] Error preparing results:`, error.message);
+            response.type = 'profileAnalysis';
+            response.error = error.message || 'Failed to prepare results';
           }
           
         } catch (error) {
