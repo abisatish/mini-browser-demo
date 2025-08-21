@@ -242,8 +242,8 @@ async function createBrowser(sessionId) {
       }
     });
     
-    // Navigate to regular LinkedIn
-    await page.goto('https://www.linkedin.com', { 
+    // Navigate to LinkedIn Sales Navigator
+    await page.goto('https://www.linkedin.com/sales', { 
       waitUntil: 'domcontentloaded',
       timeout: 15000 
     });
@@ -498,18 +498,19 @@ If you cannot find any people/profiles, return: []`
           
           console.log(`[Worker ${workerId}] 🔵 API: Using Claude for profile analysis`);
           
-          const prompt = `Analyze this profile and extract the following information in JSON format:
-{
-  "name": "Full name",
-  "currentPosition": "Current job title",
-  "currentCompany": "Current company name",
-  "previousCompanies": ["List of previous companies"],
-  "education": "Education details",
-  "skills": ["List of top skills"],
-  "summary": "Brief 2-3 sentence summary of their background and expertise"
-}
+          const prompt = `Look at this screenshot and extract information about any people/profiles visible.
 
-Be accurate and only include information you can see in the profile.`;
+For each person visible, extract:
+- name: Their full name
+- title: Their job title/position (or "Not available" if not shown)
+- company: Their company/organization (or "Not available" if not shown)
+
+Extract ALL people visible in the screenshot, whether it's one person or many.
+
+Return ONLY a valid JSON array. Example format:
+[{"name": "John Doe", "title": "Software Engineer", "company": "Tech Corp"}]
+
+If you cannot find any people/profiles, return: []`;
           
           try {
             console.log(`[Worker ${workerId}] 🔵 API: Preparing Claude request for profile...`);
@@ -544,21 +545,21 @@ Be accurate and only include information you can see in the profile.`;
             const content = claudeResponse.content[0].text;
             console.log(`[Worker ${workerId}] 🔵 API: Claude extracted profile text:`, content);
             
-            // Parse response
+            // Parse response (now expecting an array of leads)
             try {
-              const jsonMatch = content.match(/\{[\s\S]*\}/) || [null, content];
+              const jsonMatch = content.match(/\[[\s\S]*\]/) || [null, content];
               const jsonString = jsonMatch[0] || content;
-              const profileData = JSON.parse(jsonString.trim());
+              const leads = JSON.parse(jsonString.trim());
               
-              console.log(`[Worker ${workerId}] 🔵 API: Successfully parsed profile data`);
+              console.log(`[Worker ${workerId}] 🔵 API: Successfully parsed ${leads.length} leads from profile scan`);
               response.type = 'profileAnalysis';
-              response.profileData = profileData;
+              response.leads = leads;  // Changed from profileData to leads
               response.rawAnalysis = content;
               
             } catch (e) {
               console.error(`[Worker ${workerId}] 🔵 API: Failed to parse Claude response:`, content);
               response.type = 'profileAnalysis';
-              response.profileData = null;
+              response.leads = [];  // Changed from profileData to leads
               response.rawAnalysis = content;
             }
             
