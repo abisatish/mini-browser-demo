@@ -537,8 +537,6 @@ If you cannot find any people/profiles, return: []`
           
           const screenshots = [];
           const MAX_SCREENSHOTS = 10;
-          let lastScrollHeight = 0;
-          let noNewContentCount = 0;
           
           // Scroll to top first
           await page.evaluate((container) => {
@@ -555,92 +553,122 @@ If you cannot find any people/profiles, return: []`
           
           console.log(`[Worker ${workerId}] Starting dynamic scroll capture on container: ${pageInfo.scrollContainer}...`);
           
-          // Keep scrolling until we hit the bottom or max screenshots
-          for (let i = 0; i < MAX_SCREENSHOTS; i++) {
-            // Take screenshot of current viewport
-            const screenshot = await page.screenshot({ 
-              type: 'jpeg', 
-              quality: 60,
-              fullPage: false
-            });
-            screenshots.push(screenshot);
-            console.log(`[Worker ${workerId}] Captured screenshot ${i + 1}, size: ${screenshot.length} bytes`);
+          // Keep scrolling until we hit the real bottom or max screenshots
+          let previousLeadCount = pageInfo.currentLeadCount;
+          let sameLeadCountAttempts = 0;
+          let screenshotNumber = 0;
+          
+          // Take initial screenshot before any scrolling
+          const initialScreenshot = await page.screenshot({ 
+            type: 'jpeg', 
+            quality: 60,
+            fullPage: false
+          });
+          screenshots.push(initialScreenshot);
+          screenshotNumber++;
+          console.log(`[Worker ${workerId}] Captured initial screenshot ${screenshotNumber}, size: ${initialScreenshot.length} bytes`);
+          
+          for (let i = 0; i < MAX_SCREENSHOTS - 1; i++) {  // -1 because we already took initial screenshot
             
-            // Check current scroll state and scroll down
-            const scrollInfo = await page.evaluate((container) => {
-              let scrollElement = document.documentElement;
+            // LinkedIn Sales Nav uses virtual scrolling - we need to scroll to the last visible lead
+            const scrollInfo = await page.evaluate(() => {
+              // Find all lead rows
+              const leadRows = document.querySelectorAll('tr[data-x--people-list--row]');
+              const leadCountBefore = leadRows.length;
               
-              if (container === 'body') {
-                scrollElement = document.body;
-              } else if (container !== 'document') {
-                scrollElement = document.querySelector(container);
-                if (!scrollElement) scrollElement = document.documentElement;
-              }
+              // Get the last lead row
+              const lastLead = leadRows[leadRows.length - 1];
               
-              // Get current lead count before scrolling
-              const leadCountBefore = document.querySelectorAll('tr[data-x--people-list--row]').length;
-              
-              const beforeHeight = scrollElement.scrollHeight || document.documentElement.scrollHeight;
-              const viewportHeight = scrollElement.clientHeight || window.innerHeight;
-              const currentScroll = scrollElement.scrollTop || window.pageYOffset || 0;
-              
-              // Scroll down by 80% of viewport
-              const scrollAmount = Math.floor(viewportHeight * 0.8);
-              
-              if (container === 'document') {
-                window.scrollTo(0, currentScroll + scrollAmount);
-              } else if (container === 'body') {
-                document.body.scrollTop = currentScroll + scrollAmount;
-                window.scrollTo(0, currentScroll + scrollAmount); // Try both methods
+              // Scroll to the last lead to trigger loading more
+              if (lastLead) {
+                lastLead.scrollIntoView({ behavior: 'instant', block: 'end' });
               } else {
-                scrollElement.scrollTop = currentScroll + scrollAmount;
+                // Fallback to regular scroll
+                window.scrollBy(0, window.innerHeight * 0.8);
               }
               
-              const newScroll = scrollElement.scrollTop || window.pageYOffset || document.documentElement.scrollTop || 0;
-              const afterHeight = scrollElement.scrollHeight || document.documentElement.scrollHeight;
+              // Get scroll info after scrolling
+              const currentScroll = window.pageYOffset || document.documentElement.scrollTop || 0;
+              const scrollHeight = document.documentElement.scrollHeight;
+              const viewportHeight = window.innerHeight;
               
-              // Check if at bottom
-              const isAtBottom = (newScroll + viewportHeight) >= (afterHeight - 10);
+              // Check if there's a "load more" button or spinner
+              const loadMoreButton = document.querySelector('button[aria-label*="Load more"]');
+              const spinner = document.querySelector('.artdeco-spinner');
+              const hasMoreIndicator = !!loadMoreButton || !!spinner;
               
               return {
-                container,
                 leadCountBefore,
-                beforeHeight,
+                scrolledTo: currentScroll,
+                scrollHeight,
                 viewportHeight,
-                scrolledFrom: currentScroll,
-                scrolledTo: currentScroll + scrollAmount,
-                actualScroll: newScroll,
-                afterHeight,
-                isAtBottom,
-                didScroll: newScroll > currentScroll
+                hasLastLead: !!lastLead,
+                hasMoreIndicator,
+                lastLeadIndex: leadRows.length - 1
               };
-            }, pageInfo.scrollContainer);
+            });
             
-            console.log(`[Worker ${workerId}] Scroll ${i + 1}: container="${scrollInfo.container}", leads: ${scrollInfo.leadCountBefore}, height ${scrollInfo.beforeHeight}px -> ${scrollInfo.afterHeight}px, scrolled from ${scrollInfo.scrolledFrom}px to ${scrollInfo.actualScroll}px (requested ${scrollInfo.scrolledTo}px), at bottom: ${scrollInfo.isAtBottom}, did scroll: ${scrollInfo.didScroll}`);
+            console.log(`[Worker ${workerId}] Scroll ${i + 1}: ${scrollInfo.leadCountBefore} leads visible, scrolled to ${scrollInfo.scrolledTo}px, height: ${scrollInfo.scrollHeight}px, has more: ${scrollInfo.hasMoreIndicator}`);
             
-            // Wait for new content to load
-            await page.waitForTimeout(300);
+            // Wait longer for LinkedIn to load new content
+            await page.waitForTimeout(1000);
             
-            // Check if new content loaded
-            const newHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+            // Check if new leads were loaded
+            const newLeadCount = await page.evaluate(() => {
+              return document.querySelectorAll('tr[data-x--people-list--row]').length;
+            });
             
-            if (newHeight === lastScrollHeight) {
-              noNewContentCount++;
-              console.log(`[Worker ${workerId}] No new content loaded (${noNewContentCount}/3)`);
+            console.log(`[Worker ${workerId}] After wait: ${newLeadCount} leads (was ${scrollInfo.leadCountBefore})`);
+            
+            if (newLeadCount === previousLeadCount) {
+              sameLeadCountAttempts++;
+              console.log(`[Worker ${workerId}] No new leads loaded (${sameLeadCountAttempts}/3 attempts)`);
+              
+              // Try clicking "Load more" button if it exists
+              const clickedLoadMore = await page.evaluate(() => {
+                const loadMoreButton = document.querySelector('button[aria-label*="Load more"], button:has-text("Show more")');
+                if (loadMoreButton) {
+                  loadMoreButton.click();
+                  return true;
+                }
+                return false;
+              });
+              
+              if (clickedLoadMore) {
+                console.log(`[Worker ${workerId}] Clicked 'Load more' button, waiting...`);
+                await page.waitForTimeout(2000);
+                // Re-check lead count after clicking load more
+                const afterClickCount = await page.evaluate(() => {
+                  return document.querySelectorAll('tr[data-x--people-list--row]').length;
+                });
+                if (afterClickCount > newLeadCount) {
+                  newLeadCount = afterClickCount;
+                  sameLeadCountAttempts = 0;
+                  console.log(`[Worker ${workerId}] Load more button loaded ${afterClickCount - previousLeadCount} new leads`);
+                }
+              }
             } else {
-              noNewContentCount = 0;
-              console.log(`[Worker ${workerId}] New content loaded: ${lastScrollHeight}px -> ${newHeight}px`);
-            }
-            lastScrollHeight = newHeight;
-            
-            // Check if scrolling is not working at all
-            if (!scrollInfo.didScroll && scrollInfo.beforeHeight < 1000) {
-              console.log(`[Worker ${workerId}] Warning: Page appears to have no scrollable content (height: ${scrollInfo.beforeHeight}px). May need to wait for content to load.`);
+              sameLeadCountAttempts = 0;
+              console.log(`[Worker ${workerId}] Loaded ${newLeadCount - previousLeadCount} new leads`);
             }
             
-            // Stop if we're at the bottom or no new content after 3 tries
-            if (scrollInfo.isAtBottom || noNewContentCount >= 3) {
-              console.log(`[Worker ${workerId}] Reached end of page or no new content. Stopping.`);
+            // Take screenshot ONLY if new leads were loaded
+            if (newLeadCount > previousLeadCount) {
+              const screenshot = await page.screenshot({ 
+                type: 'jpeg', 
+                quality: 60,
+                fullPage: false
+              });
+              screenshots.push(screenshot);
+              screenshotNumber++;
+              console.log(`[Worker ${workerId}] Captured screenshot ${screenshotNumber} after loading ${newLeadCount - previousLeadCount} new leads, size: ${screenshot.length} bytes`);
+            }
+            
+            previousLeadCount = newLeadCount;
+            
+            // Stop if no new leads after 3 attempts
+            if (sameLeadCountAttempts >= 3) {
+              console.log(`[Worker ${workerId}] No more leads to load. Stopping.`);
               break;
             }
           }
