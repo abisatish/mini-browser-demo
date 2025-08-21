@@ -477,111 +477,116 @@ If you cannot find any people/profiles, return: []`
           // Wait a bit for page to fully load
           await page.waitForTimeout(1000);
           
-          // Progressive scrolling to trigger all lazy-loaded content
-          console.log(`[Worker ${workerId}] Triggering content loading with progressive scrolling...`);
+          // Fixed interval scrolling with screenshots at each position
+          const SCROLL_STEP = 721; // Fixed scroll step
+          const TOTAL_HEIGHT = 2688; // Target total height
+          const NUM_SCROLLS = Math.ceil(TOTAL_HEIGHT / SCROLL_STEP); // Should be about 4 scrolls
           
-          // First, check for any "Show more" buttons and click them
-          const showMoreClicked = await page.evaluate(() => {
-            const buttons = Array.from(document.querySelectorAll('button'));
-            const showMoreButton = buttons.find(btn => 
-              btn.textContent && btn.textContent.toLowerCase().includes('show more')
-            );
-            if (showMoreButton) {
-              showMoreButton.click();
-              return true;
-            }
-            return false;
+          console.log(`[Worker ${workerId}] ============================================`);
+          console.log(`[Worker ${workerId}] FIXED INTERVAL SCROLLING PLAN:`);
+          console.log(`[Worker ${workerId}] Scroll step: ${SCROLL_STEP}px`);
+          console.log(`[Worker ${workerId}] Total height to cover: ${TOTAL_HEIGHT}px`);
+          console.log(`[Worker ${workerId}] Number of scrolls: ${NUM_SCROLLS}`);
+          console.log(`[Worker ${workerId}] ============================================`);
+          
+          // Array to hold all screenshots
+          const scrollScreenshots = [];
+          
+          // Start at top
+          await page.evaluate(() => {
+            window.scrollTo(0, 0);
           });
+          await page.waitForTimeout(1000);
           
-          if (showMoreClicked) {
-            console.log(`[Worker ${workerId}] Clicked "Show more" button, waiting for content...`);
-            await page.waitForTimeout(2000);
-          }
-          
-          // Progressive scroll to ensure all content loads
-          let previousHeight = 0;
-          let currentHeight = await page.evaluate(() => document.documentElement.scrollHeight);
-          let scrollAttempts = 0;
-          
-          while (previousHeight !== currentHeight && scrollAttempts < 5) {
-            previousHeight = currentHeight;
+          // FOR LOOP - exactly NUM_SCROLLS iterations, no stopping early
+          for (let i = 0; i < NUM_SCROLLS; i++) {
+            const scrollPosition = i * SCROLL_STEP;
             
-            // Scroll to bottom
-            await page.evaluate(() => {
-              window.scrollTo(0, document.documentElement.scrollHeight);
+            // Scroll to specific position
+            await page.evaluate((pos) => {
+              window.scrollTo(0, pos);
+            }, scrollPosition);
+            
+            // Wait for content to load at this position
+            await page.waitForTimeout(1500);
+            
+            // Get current state
+            const scrollState = await page.evaluate(() => {
+              const leadsRows = document.querySelectorAll('tr[data-x--people-list--row]');
+              return {
+                scrollY: window.scrollY,
+                documentHeight: document.documentElement.scrollHeight,
+                bodyHeight: document.body.scrollHeight,
+                visibleLeads: leadsRows.length,
+                viewportHeight: window.innerHeight
+              };
             });
             
-            await page.waitForTimeout(1500); // Wait for lazy loading
+            console.log(`[Worker ${workerId}] Scroll ${i + 1}/${NUM_SCROLLS}:`);
+            console.log(`[Worker ${workerId}]   - Scrolled to: ${scrollState.scrollY}px`);
+            console.log(`[Worker ${workerId}]   - Document height: ${scrollState.documentHeight}px`);
+            console.log(`[Worker ${workerId}]   - Body height: ${scrollState.bodyHeight}px`);
+            console.log(`[Worker ${workerId}]   - Visible leads: ${scrollState.visibleLeads}`);
             
-            currentHeight = await page.evaluate(() => document.documentElement.scrollHeight);
-            scrollAttempts++;
+            // Take screenshot at this scroll position
+            const screenshot = await page.screenshot({ 
+              type: 'jpeg', 
+              quality: 80,
+              fullPage: false  // Just viewport at current scroll position
+            });
             
-            console.log(`[Worker ${workerId}] Scroll attempt ${scrollAttempts}: height changed from ${previousHeight}px to ${currentHeight}px`);
+            scrollScreenshots.push({
+              scrollPosition: scrollState.scrollY,
+              screenshot: screenshot,
+              leadCount: scrollState.visibleLeads,
+              documentHeight: scrollState.documentHeight
+            });
+            
+            console.log(`[Worker ${workerId}]   - Screenshot ${i + 1} captured (${(screenshot.length / 1024).toFixed(2)} KB)`);
           }
           
-          // Final scroll back to top
+          console.log(`[Worker ${workerId}] ============================================`);
+          console.log(`[Worker ${workerId}] SCROLLING COMPLETE:`);
+          console.log(`[Worker ${workerId}] Total screenshots taken: ${scrollScreenshots.length}`);
+          console.log(`[Worker ${workerId}] ============================================`);
+          
+          // Scroll back to top for final full-page capture
           await page.evaluate(() => {
             window.scrollTo(0, 0);
           });
           await page.waitForTimeout(500);
           
-          // Get final height before screenshot
-          const finalHeight = await page.evaluate(() => document.documentElement.scrollHeight);
-          console.log(`[Worker ${workerId}] FINAL PAGE HEIGHT BEFORE SCREENSHOT: ${finalHeight}px`);
-          
-          // Get page info for logging
+          // Get final page info after all scrolling
           const pageInfo = await page.evaluate(() => {
             const leadsRows = document.querySelectorAll('tr[data-x--people-list--row]');
             const scrollHeight = document.documentElement.scrollHeight;
             const viewportHeight = window.innerHeight;
-            
-            // Check various height measurements
             const bodyHeight = document.body.scrollHeight;
-            const tableWrapper = document.querySelector('.models-table-wrapper');
-            const tableWrapperHeight = tableWrapper ? tableWrapper.scrollHeight : 0;
-            const table = document.querySelector('table.people-list-detail__table');
-            const tableHeight = table ? table.scrollHeight : 0;
-            
-            // Check if content is hidden or collapsed
-            const mainContent = document.querySelector('main');
-            const mainHeight = mainContent ? mainContent.scrollHeight : 0;
             
             return {
               leadCount: leadsRows.length,
               scrollHeight,
               viewportHeight,
               bodyHeight,
-              tableWrapperHeight,
-              tableHeight,
-              mainHeight,
-              url: window.location.href,
-              // Debug: check if leads are actually visible
-              firstLeadVisible: leadsRows[0] ? leadsRows[0].offsetHeight > 0 : false,
-              lastLeadVisible: leadsRows[leadsRows.length - 1] ? leadsRows[leadsRows.length - 1].offsetHeight > 0 : false
+              url: window.location.href
             };
           });
           
-          console.log(`[Worker ${workerId}] Page measurements:`);
-          console.log(`[Worker ${workerId}]   - Lead count: ${pageInfo.leadCount} leads`);
-          console.log(`[Worker ${workerId}]   - Document scrollHeight: ${pageInfo.scrollHeight}px`);
-          console.log(`[Worker ${workerId}]   - Body scrollHeight: ${pageInfo.bodyHeight}px`);
-          console.log(`[Worker ${workerId}]   - Table wrapper height: ${pageInfo.tableWrapperHeight}px`);
-          console.log(`[Worker ${workerId}]   - Table height: ${pageInfo.tableHeight}px`);
-          console.log(`[Worker ${workerId}]   - Main content height: ${pageInfo.mainHeight}px`);
-          console.log(`[Worker ${workerId}]   - Viewport height: ${pageInfo.viewportHeight}px`);
-          console.log(`[Worker ${workerId}]   - First lead visible: ${pageInfo.firstLeadVisible}`);
-          console.log(`[Worker ${workerId}]   - Last lead visible: ${pageInfo.lastLeadVisible}`);
+          console.log(`[Worker ${workerId}] FINAL STATE AFTER ALL SCROLLS:`);
+          console.log(`[Worker ${workerId}]   - Total leads found: ${pageInfo.leadCount}`);
+          console.log(`[Worker ${workerId}]   - Final document height: ${pageInfo.scrollHeight}px`);
+          console.log(`[Worker ${workerId}]   - Final body height: ${pageInfo.bodyHeight}px`);
           
-          // Take FULL PAGE screenshot - captures entire 2688px or whatever the full height is
+          // Now take the final full-page screenshot
           console.log(`[Worker ${workerId}] ============================================`);
-          console.log(`[Worker ${workerId}] TAKING SCREENSHOT WITH THESE DIMENSIONS:`);
+          console.log(`[Worker ${workerId}] TAKING FINAL FULL PAGE SCREENSHOT:`);
           console.log(`[Worker ${workerId}] Expected capture: 1280 x ${pageInfo.scrollHeight} pixels`);
           console.log(`[Worker ${workerId}] ============================================`);
           
           const fullPageScreenshot = await page.screenshot({ 
             type: 'jpeg', 
             quality: 80,
-            fullPage: true  // This captures the ENTIRE page height
+            fullPage: true  // This should now capture everything that was loaded
           });
           
           // Function to extract JPEG dimensions from buffer
