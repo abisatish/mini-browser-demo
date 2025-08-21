@@ -242,8 +242,8 @@ async function createBrowser(sessionId) {
       }
     });
     
-    // Navigate directly to LinkedIn Sales Navigator
-    await page.goto('https://www.linkedin.com/sales/home', { 
+    // Navigate to regular LinkedIn
+    await page.goto('https://www.linkedin.com', { 
       waitUntil: 'domcontentloaded',
       timeout: 15000 
     });
@@ -362,75 +362,96 @@ async function executeBrowserCommand(browserId, command) {
         try {
           const currentUrl = page.url();
           
-          // Check if we're on Sales Navigator
-          if (!currentUrl.includes('linkedin.com/sales/')) {
+          // Check if we're on LinkedIn (either Sales Navigator or regular)
+          if (!currentUrl.includes('linkedin.com')) {
             response.type = 'leadsAnalysis';
-            response.error = 'Please navigate to LinkedIn Sales Navigator first';
+            response.error = 'Please navigate to LinkedIn first';
             break;
           }
           
-          // Try multiple approaches to get full page content
-          console.log(`[Worker ${workerId}] Attempting to capture full page content...`);
+                    // Force LinkedIn to render all content by scrolling through the page
+          console.log(`[Worker ${workerId}] Forcing content rendering...`);
           
-          // Temporarily set a very large viewport to force full content rendering
-          const originalViewport = await page.viewportSize();
-          await page.setViewportSize({ width: 1280, height: 10000 });
-          await page.waitForTimeout(1000); // Let content adjust
-          
-          let screenshot;
-          
-          // Method 1: Try fullPage first
-          try {
-            console.log(`[Worker ${workerId}] Method 1: Using fullPage: true`);
-            screenshot = await page.screenshot({ 
-              type: 'jpeg', 
-              quality: 80,
-              fullPage: true
+          // Scroll through the entire page to trigger lazy loading
+          await page.evaluate(() => {
+            return new Promise((resolve) => {
+              let totalHeight = 0;
+              const distance = 500;
+              const timer = setInterval(() => {
+                const scrollHeight = document.documentElement.scrollHeight;
+                window.scrollBy(0, distance);
+                totalHeight += distance;
+                
+                if(totalHeight >= scrollHeight){
+                  clearInterval(timer);
+                  window.scrollTo(0, 0); // Scroll back to top
+                  resolve();
+                }
+              }, 200);
             });
-            console.log(`[Worker ${workerId}] fullPage screenshot size: ${screenshot.length} bytes`);
-          } catch (error) {
-            console.log(`[Worker ${workerId}] fullPage failed, trying clip method`);
-            
-            // Method 2: Get dimensions and use clip
-            const dimensions = await page.evaluate(() => {
-              const body = document.body;
-              const html = document.documentElement;
-              const height = Math.max(
-                body.scrollHeight, body.offsetHeight,
-                html.clientHeight, html.scrollHeight, html.offsetHeight
-              );
-              const width = Math.max(
-                body.scrollWidth, body.offsetWidth,
-                html.clientWidth, html.scrollWidth, html.offsetWidth
-              );
-              return { width, height };
-            });
-            
-            console.log(`[Worker ${workerId}] Page dimensions: ${dimensions.width}x${dimensions.height}`);
-            
-            screenshot = await page.screenshot({ 
-              type: 'jpeg', 
-              quality: 80,
-              clip: {
-                x: 0,
-                y: 0,
-                width: dimensions.width,
-                height: Math.min(dimensions.height, 10000) // Cap at 10k pixels
+          });
+          
+          // Wait for any lazy-loaded content to render
+          await page.waitForTimeout(2000);
+          
+          // Try to force LinkedIn to show all leads by manipulating CSS
+          await page.evaluate(() => {
+            // Remove any CSS that might be hiding content
+            const style = document.createElement('style');
+            style.textContent = `
+              * { 
+                display: block !important; 
+                visibility: visible !important; 
+                opacity: 1 !important; 
+                height: auto !important; 
+                max-height: none !important;
               }
-            });
-            console.log(`[Worker ${workerId}] clip screenshot size: ${screenshot.length} bytes`);
-          }
+              .artdeco-list__item, [data-test-lead-list-item], [data-control-name="lead_list_item"] {
+                display: block !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+              }
+            `;
+            document.head.appendChild(style);
+          });
+          
+          // Wait a bit more for CSS changes to take effect
+          await page.waitForTimeout(1000);
+          
+          // Take full page screenshot
+          console.log(`[Worker ${workerId}] Capturing full page screenshot...`);
+          const screenshot = await page.screenshot({ 
+            type: 'jpeg', 
+            quality: 80,
+            fullPage: true
+          });
           console.log(`[Worker ${workerId}] Screenshot captured, size: ${screenshot.length} bytes`);
           
-          // Restore original viewport
-          await page.setViewportSize(originalViewport);
+          // Debug: Check what lead items are actually visible
+          const leadCount = await page.evaluate(() => {
+            const selectors = [
+              '.artdeco-list__item',
+              '[data-test-lead-list-item]', 
+              '[data-control-name="lead_list_item"]',
+              '.search-results__result-item',
+              '.entity-result__item'
+            ];
+            
+            let count = 0;
+            let selector = '';
+            for (const sel of selectors) {
+              const elements = document.querySelectorAll(sel);
+              if (elements.length > 0) {
+                count = elements.length;
+                selector = sel;
+                break;
+              }
+            }
+            
+            return { count, selector };
+          });
           
-          // Debug: Check if we're actually getting a larger screenshot
-          if (screenshot.length < 50000) {
-            console.log(`[Worker ${workerId}] ⚠️ WARNING: Screenshot seems small (${screenshot.length} bytes), may not be capturing full page`);
-          } else {
-            console.log(`[Worker ${workerId}] ✅ Screenshot size looks good (${screenshot.length} bytes)`);
-          }
+          console.log(`[Worker ${workerId}] Debug: Found ${leadCount.count} leads using selector: ${leadCount.selector}`);
           
           // Import AI SDKs
           const { default: Anthropic } = await import('@anthropic-ai/sdk');
@@ -471,22 +492,23 @@ async function executeBrowserCommand(browserId, command) {
                   content: [
                     {
                       type: "text",
-                      text: `Look at this LinkedIn Sales Navigator screenshot. Extract information for ALL visible leads/people shown in the list.
+                      text: `Look at this LinkedIn screenshot. This could be either:
+1. A LinkedIn profile page - extract info about the main profile
+2. A Sales Navigator page - extract all leads/people in the list
+3. A LinkedIn search results page - extract all people shown
 
-For each person/lead visible, extract:
+For each person visible, extract:
 - name: Their full name
 - title: Their job title/position
 - company: Their company name
 
-Important: 
-- Look for the table/list of people with profile pictures
-- Each row is a different lead
-- Extract ALL visible leads, not just the first one
+If it's a single profile page, return an array with one person.
+If it's a list/search page, extract ALL visible people.
 
 Return ONLY a valid JSON array. Example format:
-[{"name": "Evan Rama", "title": "Founder & CEO", "company": "Company Name"}]
+[{"name": "John Doe", "title": "Software Engineer", "company": "Tech Corp"}]
 
-If you cannot see any leads, return: []`
+If you cannot extract any people, return: []`
                     },
                     {
                       type: "image",
