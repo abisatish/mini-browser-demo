@@ -645,12 +645,13 @@ If you cannot find any people/profiles, return: []`
           console.log(`[Worker ${workerId}]   - Page had ${pageInfo.leadCount} leads visible`);
           console.log(`[Worker ${workerId}]   - Bytes per pixel: ${(screenshotInfo.bytes / screenshotInfo.actualPixels).toFixed(3)}`);
           
-          const screenshots = [fullPageScreenshot];
+          // Use the 4 scroll screenshots instead of the full page screenshot
+          const screenshots = scrollScreenshots.map(s => s.screenshot);
           
           // Scroll back to top after capture
           await page.evaluate(() => window.scrollTo(0, 0));
           
-          console.log(`[Worker ${workerId}] Full page capture complete`);
+          console.log(`[Worker ${workerId}] Using ${scrollScreenshots.length} scroll screenshots for analysis`);
           
           // Import AI SDKs
           const { default: Anthropic } = await import('@anthropic-ai/sdk');
