@@ -477,25 +477,106 @@ If you cannot find any people/profiles, return: []`
           // Wait a bit for page to fully load
           await page.waitForTimeout(1000);
           
+          // Progressive scrolling to trigger all lazy-loaded content
+          console.log(`[Worker ${workerId}] Triggering content loading with progressive scrolling...`);
+          
+          // First, check for any "Show more" buttons and click them
+          const showMoreClicked = await page.evaluate(() => {
+            const buttons = Array.from(document.querySelectorAll('button'));
+            const showMoreButton = buttons.find(btn => 
+              btn.textContent && btn.textContent.toLowerCase().includes('show more')
+            );
+            if (showMoreButton) {
+              showMoreButton.click();
+              return true;
+            }
+            return false;
+          });
+          
+          if (showMoreClicked) {
+            console.log(`[Worker ${workerId}] Clicked "Show more" button, waiting for content...`);
+            await page.waitForTimeout(2000);
+          }
+          
+          // Progressive scroll to ensure all content loads
+          let previousHeight = 0;
+          let currentHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+          let scrollAttempts = 0;
+          
+          while (previousHeight !== currentHeight && scrollAttempts < 5) {
+            previousHeight = currentHeight;
+            
+            // Scroll to bottom
+            await page.evaluate(() => {
+              window.scrollTo(0, document.documentElement.scrollHeight);
+            });
+            
+            await page.waitForTimeout(1500); // Wait for lazy loading
+            
+            currentHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+            scrollAttempts++;
+            
+            console.log(`[Worker ${workerId}] Scroll attempt ${scrollAttempts}: height changed from ${previousHeight}px to ${currentHeight}px`);
+          }
+          
+          // Final scroll back to top
+          await page.evaluate(() => {
+            window.scrollTo(0, 0);
+          });
+          await page.waitForTimeout(500);
+          
+          // Get final height before screenshot
+          const finalHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+          console.log(`[Worker ${workerId}] FINAL PAGE HEIGHT BEFORE SCREENSHOT: ${finalHeight}px`);
+          
           // Get page info for logging
           const pageInfo = await page.evaluate(() => {
             const leadsRows = document.querySelectorAll('tr[data-x--people-list--row]');
             const scrollHeight = document.documentElement.scrollHeight;
             const viewportHeight = window.innerHeight;
             
+            // Check various height measurements
+            const bodyHeight = document.body.scrollHeight;
+            const tableWrapper = document.querySelector('.models-table-wrapper');
+            const tableWrapperHeight = tableWrapper ? tableWrapper.scrollHeight : 0;
+            const table = document.querySelector('table.people-list-detail__table');
+            const tableHeight = table ? table.scrollHeight : 0;
+            
+            // Check if content is hidden or collapsed
+            const mainContent = document.querySelector('main');
+            const mainHeight = mainContent ? mainContent.scrollHeight : 0;
+            
             return {
               leadCount: leadsRows.length,
               scrollHeight,
               viewportHeight,
-              url: window.location.href
+              bodyHeight,
+              tableWrapperHeight,
+              tableHeight,
+              mainHeight,
+              url: window.location.href,
+              // Debug: check if leads are actually visible
+              firstLeadVisible: leadsRows[0] ? leadsRows[0].offsetHeight > 0 : false,
+              lastLeadVisible: leadsRows[leadsRows.length - 1] ? leadsRows[leadsRows.length - 1].offsetHeight > 0 : false
             };
           });
           
-          console.log(`[Worker ${workerId}] Page info: ${pageInfo.leadCount} leads, height: ${pageInfo.scrollHeight}px, viewport: ${pageInfo.viewportHeight}px`);
+          console.log(`[Worker ${workerId}] Page measurements:`);
+          console.log(`[Worker ${workerId}]   - Lead count: ${pageInfo.leadCount} leads`);
+          console.log(`[Worker ${workerId}]   - Document scrollHeight: ${pageInfo.scrollHeight}px`);
+          console.log(`[Worker ${workerId}]   - Body scrollHeight: ${pageInfo.bodyHeight}px`);
+          console.log(`[Worker ${workerId}]   - Table wrapper height: ${pageInfo.tableWrapperHeight}px`);
+          console.log(`[Worker ${workerId}]   - Table height: ${pageInfo.tableHeight}px`);
+          console.log(`[Worker ${workerId}]   - Main content height: ${pageInfo.mainHeight}px`);
+          console.log(`[Worker ${workerId}]   - Viewport height: ${pageInfo.viewportHeight}px`);
+          console.log(`[Worker ${workerId}]   - First lead visible: ${pageInfo.firstLeadVisible}`);
+          console.log(`[Worker ${workerId}]   - Last lead visible: ${pageInfo.lastLeadVisible}`);
           
           // Take FULL PAGE screenshot - captures entire 2688px or whatever the full height is
-          console.log(`[Worker ${workerId}] Capturing full page screenshot...`);
+          console.log(`[Worker ${workerId}] ============================================`);
+          console.log(`[Worker ${workerId}] TAKING SCREENSHOT WITH THESE DIMENSIONS:`);
           console.log(`[Worker ${workerId}] Expected capture: 1280 x ${pageInfo.scrollHeight} pixels`);
+          console.log(`[Worker ${workerId}] ============================================`);
           
           const fullPageScreenshot = await page.screenshot({ 
             type: 'jpeg', 
@@ -530,6 +611,13 @@ If you cannot find any people/profiles, return: []`
           
           // Get actual dimensions from the JPEG buffer
           const actualDimensions = getJpegDimensions(fullPageScreenshot);
+          
+          console.log(`[Worker ${workerId}] ============================================`);
+          console.log(`[Worker ${workerId}] ACTUAL SCREENSHOT CAPTURED:`);
+          console.log(`[Worker ${workerId}] Dimensions: ${actualDimensions.width} x ${actualDimensions.height} pixels`);
+          console.log(`[Worker ${workerId}] File size: ${(fullPageScreenshot.length / 1024).toFixed(2)} KB`);
+          console.log(`[Worker ${workerId}] Height match: ${actualDimensions.height === pageInfo.scrollHeight ? '✓ MATCHES EXPECTED' : `✗ MISMATCH (expected ${pageInfo.scrollHeight}px)`}`);
+          console.log(`[Worker ${workerId}] ============================================`);
           
           // Get the actual dimensions of the screenshot
           const screenshotInfo = {
@@ -874,7 +962,6 @@ parentPort.on('message', async (msg) => {
           await closeBrowser(browserId);
         }
         process.exit(0);
-        break;
         
       default:
         response.error = `Unknown command: ${msg.cmd}`;
@@ -921,7 +1008,7 @@ process.on('uncaughtException', (error) => {
   });
 });
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason) => {
   console.error(`[Worker ${workerId}] Unhandled rejection:`, reason);
   parentPort.postMessage({
     type: 'error',
