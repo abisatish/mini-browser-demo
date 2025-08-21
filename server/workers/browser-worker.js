@@ -468,20 +468,66 @@ If you cannot find any people/profiles, return: []`
         break;
         
       case 'scanProfile':
-        console.log(`[Worker ${workerId}] Starting profile scan`);
+        console.log(`[Worker ${workerId}] Starting profile scan with scrolling capture`);
         
         try {
           const currentUrl = page.url();
           console.log(`[Worker ${workerId}] Scanning profile on page: ${currentUrl}`);
           
-          // Take full page screenshot (no scrolling as user requested)
-          console.log(`[Worker ${workerId}] Capturing full page screenshot for profile...`);
-          const screenshot = await page.screenshot({ 
-            type: 'jpeg', 
-            quality: 80,
-            fullPage: true
-          });
-          console.log(`[Worker ${workerId}] Profile screenshot captured, size: ${screenshot.length} bytes`);
+          // Get page dimensions and viewport
+          const dimensions = await page.evaluate(() => ({
+            scrollHeight: document.documentElement.scrollHeight,
+            clientHeight: window.innerHeight,
+            scrollWidth: document.documentElement.scrollWidth,
+            clientWidth: window.innerWidth
+          }));
+          
+          console.log(`[Worker ${workerId}] Page dimensions:`, dimensions);
+          
+          // Calculate scroll steps (overlap slightly to not miss content)
+          const scrollStep = Math.floor(dimensions.clientHeight * 0.8); // 80% of viewport height for overlap
+          let totalScrolls = Math.ceil(dimensions.scrollHeight / scrollStep);
+          
+          // Limit to max 10 screenshots to avoid API limits
+          const MAX_SCREENSHOTS = 10;
+          if (totalScrolls > MAX_SCREENSHOTS) {
+            console.log(`[Worker ${workerId}] Limiting screenshots from ${totalScrolls} to ${MAX_SCREENSHOTS}`);
+            totalScrolls = MAX_SCREENSHOTS;
+          }
+          
+          const screenshots = [];
+          
+          console.log(`[Worker ${workerId}] Will take ${totalScrolls} screenshots with ${scrollStep}px steps`);
+          
+          // Scroll to top first
+          await page.evaluate(() => window.scrollTo(0, 0));
+          await page.waitForTimeout(200); // Quick settle
+          
+          // Take screenshots while scrolling
+          for (let i = 0; i < totalScrolls; i++) {
+            const scrollPosition = i * scrollStep;
+            
+            // Scroll to position
+            await page.evaluate((pos) => window.scrollTo(0, pos), scrollPosition);
+            
+            // Minimal wait for content to render
+            await page.waitForTimeout(150);
+            
+            // Take screenshot of current viewport
+            const screenshot = await page.screenshot({ 
+              type: 'jpeg', 
+              quality: 60, // Lower quality for faster capture and smaller size
+              fullPage: false // Just viewport
+            });
+            
+            screenshots.push(screenshot);
+            console.log(`[Worker ${workerId}] Captured screenshot ${i + 1}/${totalScrolls}, size: ${screenshot.length} bytes`);
+          }
+          
+          // Scroll back to top
+          await page.evaluate(() => window.scrollTo(0, 0));
+          
+          console.log(`[Worker ${workerId}] Total screenshots captured: ${screenshots.length}, total size: ${screenshots.reduce((sum, s) => sum + s.length, 0)} bytes`);
           
           // Import AI SDKs
           const { default: Anthropic } = await import('@anthropic-ai/sdk');
@@ -513,29 +559,36 @@ Return ONLY a valid JSON array. Example format:
 If you cannot find any people/profiles, return: []`;
           
           try {
-            console.log(`[Worker ${workerId}] 🔵 API: Preparing Claude request for profile...`);
+            console.log(`[Worker ${workerId}] 🔵 API: Preparing Claude request with ${screenshots.length} screenshots...`);
             const startTime = Date.now();
+            
+            // Build content array with text prompt followed by all screenshots
+            const contentArray = [
+              {
+                type: "text",
+                text: prompt + "\n\nI'm showing you multiple screenshots from scrolling through the page. Extract ALL unique people you see across all screenshots. Don't duplicate if you see the same person multiple times."
+              }
+            ];
+            
+            // Add each screenshot as an image
+            for (let i = 0; i < screenshots.length; i++) {
+              contentArray.push({
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: "image/jpeg",
+                  data: screenshots[i].toString('base64')
+                }
+              });
+            }
             
             const claudeResponse = await anthropic.messages.create({
               model: "claude-3-5-sonnet-20241022",
-              max_tokens: 1000,
+              max_tokens: 2000, // Increased for more results
               temperature: 0.3,
               messages: [{
                 role: "user",
-                content: [
-                  {
-                    type: "text",
-                    text: prompt
-                  },
-                  {
-                    type: "image",
-                    source: {
-                      type: "base64",
-                      media_type: "image/jpeg",
-                      data: screenshot.toString('base64')
-                    }
-                  }
-                ]
+                content: contentArray
               }]
             });
             
