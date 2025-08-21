@@ -1708,18 +1708,9 @@ If any field is not visible in the screenshot, use "Not available" for that fiel
             break;
             
           case 'scanProfile':
-            console.log('Starting LinkedIn profile scan');
+            console.log('Starting profile scan');
             try {
               const currentUrl = page.url();
-              
-              // Only proceed if we're on a LinkedIn profile
-              if (!currentUrl.includes('linkedin.com/in/')) {
-                ws.send(JSON.stringify({ 
-                  type: 'scanError', 
-                  error: 'Not on a LinkedIn profile page' 
-                }));
-                break;
-              }
               
               // Visual scanning effect - quick scroll down then up
               ws.send(JSON.stringify({ type: 'scanStatus', status: 'scanning', message: 'Analyzing profile...' }));

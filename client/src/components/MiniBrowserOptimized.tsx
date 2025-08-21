@@ -444,12 +444,7 @@ export default function MiniBrowserOptimized() {
               <div className="menu-separator" />
               <button 
                 onClick={() => {
-                  // Check if we're on LinkedIn
-                  if (url.includes('linkedin.com/in/')) {
-                    setShowProfileScanner(true);
-                  } else {
-                    alert('Please navigate to a LinkedIn profile first');
-                  }
+                  setShowProfileScanner(true);
                   setShowMenu(false);
                 }} 
                 className="menu-item"
@@ -458,16 +453,11 @@ export default function MiniBrowserOptimized() {
               </button>
               <button 
                 onClick={() => {
-                  // Check if we're on Sales Navigator
-                  if (url.includes('linkedin.com/sales/')) {
-                    setShowLeadScanner(true);
-                  } else {
-                    alert('Please navigate to LinkedIn Sales Navigator first');
-                  }
+                  setShowLeadScanner(true);
                   setShowMenu(false);
                 }}
                 className="menu-item"
-                title="Extract all leads from Sales Navigator page"
+                title="Extract all people/profiles from current page"
               >
                 📊 Lead Scanner (CSV)
               </button>

@@ -362,61 +362,9 @@ async function executeBrowserCommand(browserId, command) {
         try {
           const currentUrl = page.url();
           
-          // Check if we're on LinkedIn (either Sales Navigator or regular)
-          if (!currentUrl.includes('linkedin.com')) {
-            response.type = 'leadsAnalysis';
-            response.error = 'Please navigate to LinkedIn first';
-            break;
-          }
+          // No URL requirement - scan any page
+          console.log(`[Worker ${workerId}] Scanning page: ${currentUrl}`);
           
-                    // Force LinkedIn to render all content by scrolling through the page
-          console.log(`[Worker ${workerId}] Forcing content rendering...`);
-          
-          // Scroll through the entire page to trigger lazy loading
-          await page.evaluate(() => {
-            return new Promise((resolve) => {
-              let totalHeight = 0;
-              const distance = 500;
-              const timer = setInterval(() => {
-                const scrollHeight = document.documentElement.scrollHeight;
-                window.scrollBy(0, distance);
-                totalHeight += distance;
-                
-                if(totalHeight >= scrollHeight){
-                  clearInterval(timer);
-                  window.scrollTo(0, 0); // Scroll back to top
-                  resolve();
-                }
-              }, 200);
-            });
-          });
-          
-          // Wait for any lazy-loaded content to render
-          await page.waitForTimeout(2000);
-          
-          // Try to force LinkedIn to show all leads by manipulating CSS
-          await page.evaluate(() => {
-            // Remove any CSS that might be hiding content
-            const style = document.createElement('style');
-            style.textContent = `
-              * { 
-                display: block !important; 
-                visibility: visible !important; 
-                opacity: 1 !important; 
-                height: auto !important; 
-                max-height: none !important;
-              }
-              .artdeco-list__item, [data-test-lead-list-item], [data-control-name="lead_list_item"] {
-                display: block !important;
-                visibility: visible !important;
-                opacity: 1 !important;
-              }
-            `;
-            document.head.appendChild(style);
-          });
-          
-          // Wait a bit more for CSS changes to take effect
-          await page.waitForTimeout(1000);
           
           // Take full page screenshot
           console.log(`[Worker ${workerId}] Capturing full page screenshot...`);
@@ -492,23 +440,24 @@ async function executeBrowserCommand(browserId, command) {
                   content: [
                     {
                       type: "text",
-                      text: `Look at this LinkedIn screenshot. This could be either:
-1. A LinkedIn profile page - extract info about the main profile
-2. A Sales Navigator page - extract all leads/people in the list
-3. A LinkedIn search results page - extract all people shown
+                      text: `Look at this screenshot and extract information about any people/profiles visible.
+
+This could be:
+- A LinkedIn profile or search results
+- Sales Navigator leads
+- Any webpage with people's information
 
 For each person visible, extract:
 - name: Their full name
-- title: Their job title/position
-- company: Their company name
+- title: Their job title/position (or "Not available" if not shown)
+- company: Their company/organization (or "Not available" if not shown)
 
-If it's a single profile page, return an array with one person.
-If it's a list/search page, extract ALL visible people.
+Extract ALL people visible in the screenshot, whether it's one person or many.
 
 Return ONLY a valid JSON array. Example format:
 [{"name": "John Doe", "title": "Software Engineer", "company": "Tech Corp"}]
 
-If you cannot extract any people, return: []`
+If you cannot find any people/profiles, return: []`
                     },
                     {
                       type: "image",
@@ -570,6 +519,115 @@ If you cannot extract any people, return: []`
           console.error(`[Worker ${workerId}] Lead scan error:`, error);
           response.type = 'leadsAnalysis';
           response.error = error.message || 'Failed to scan leads';
+        }
+        break;
+        
+      case 'scanProfile':
+        console.log(`[Worker ${workerId}] Starting profile scan`);
+        
+        try {
+          const currentUrl = page.url();
+          console.log(`[Worker ${workerId}] Scanning profile on page: ${currentUrl}`);
+          
+          // Take full page screenshot (no scrolling as user requested)
+          console.log(`[Worker ${workerId}] Capturing full page screenshot for profile...`);
+          const screenshot = await page.screenshot({ 
+            type: 'jpeg', 
+            quality: 80,
+            fullPage: true
+          });
+          console.log(`[Worker ${workerId}] Profile screenshot captured, size: ${screenshot.length} bytes`);
+          
+          // Import AI SDKs
+          const { default: Anthropic } = await import('@anthropic-ai/sdk');
+          const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({
+            apiKey: process.env.ANTHROPIC_API_KEY
+          }) : null;
+          
+          if (!anthropic) {
+            console.log(`[Worker ${workerId}] No AI client configured`);
+            response.type = 'profileAnalysis';
+            response.error = 'No AI client configured (need Anthropic API key)';
+            break;
+          }
+          
+          console.log(`[Worker ${workerId}] 🔵 API: Using Claude for profile analysis`);
+          
+          const prompt = `Analyze this profile and extract the following information in JSON format:
+{
+  "name": "Full name",
+  "currentPosition": "Current job title",
+  "currentCompany": "Current company name",
+  "previousCompanies": ["List of previous companies"],
+  "education": "Education details",
+  "skills": ["List of top skills"],
+  "summary": "Brief 2-3 sentence summary of their background and expertise"
+}
+
+Be accurate and only include information you can see in the profile.`;
+          
+          try {
+            console.log(`[Worker ${workerId}] 🔵 API: Preparing Claude request for profile...`);
+            const startTime = Date.now();
+            
+            const claudeResponse = await anthropic.messages.create({
+              model: "claude-3-5-sonnet-20241022",
+              max_tokens: 1000,
+              temperature: 0.3,
+              messages: [{
+                role: "user",
+                content: [
+                  {
+                    type: "text",
+                    text: prompt
+                  },
+                  {
+                    type: "image",
+                    source: {
+                      type: "base64",
+                      media_type: "image/jpeg",
+                      data: screenshot.toString('base64')
+                    }
+                  }
+                ]
+              }]
+            });
+            
+            const endTime = Date.now();
+            console.log(`[Worker ${workerId}] 🔵 API: Claude API call completed in:`, endTime - startTime, 'ms');
+            
+            const content = claudeResponse.content[0].text;
+            console.log(`[Worker ${workerId}] 🔵 API: Claude extracted profile text:`, content);
+            
+            // Parse response
+            try {
+              const jsonMatch = content.match(/\{[\s\S]*\}/) || [null, content];
+              const jsonString = jsonMatch[0] || content;
+              const profileData = JSON.parse(jsonString.trim());
+              
+              console.log(`[Worker ${workerId}] 🔵 API: Successfully parsed profile data`);
+              response.type = 'profileAnalysis';
+              response.profileData = profileData;
+              response.rawAnalysis = content;
+              
+            } catch (e) {
+              console.error(`[Worker ${workerId}] 🔵 API: Failed to parse Claude response:`, content);
+              response.type = 'profileAnalysis';
+              response.profileData = null;
+              response.rawAnalysis = content;
+            }
+            
+          } catch (claudeError) {
+            console.error(`[Worker ${workerId}] 🔵 API: Claude error occurred`);
+            console.error(`[Worker ${workerId}] 🔵 API: Error message:`, claudeError.message);
+            response.type = 'profileAnalysis';
+            response.error = claudeError.message || 'Failed to analyze profile';
+          }
+          
+        } catch (error) {
+          console.error(`[Worker ${workerId}] Profile scan error:`, error);
+          response.type = 'profileAnalysis';
+          response.error = error.message || 'Failed to scan profile';
         }
         break;
         

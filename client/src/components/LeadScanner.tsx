@@ -141,11 +141,11 @@ export default function LeadScanner({ wsRef, onClose }: LeadScannerProps) {
         
         <h2 className="lead-scanner-title">
           <span className="scanner-icon">📊</span>
-          Sales Navigator Lead Scanner
+          Page Scanner
         </h2>
         
         <p className="lead-scanner-description">
-          Extract all leads from the entire Sales Navigator page (including content below the fold) into a CSV file.
+          Extract all people/profiles from the current page into a CSV file.
         </p>
 
         {!isScanning && leads.length === 0 && (
