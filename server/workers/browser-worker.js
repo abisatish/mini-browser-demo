@@ -474,17 +474,86 @@ If you cannot find any people/profiles, return: []`
           const currentUrl = page.url();
           console.log(`[Worker ${workerId}] Scanning profile on page: ${currentUrl}`);
           
+          // Wait a bit for page to fully load
+          await page.waitForTimeout(1000);
+          
+          // Check what kind of page we're on and find the scroll container
+          const pageInfo = await page.evaluate(() => {
+            // Check for LinkedIn Sales Navigator table structure
+            const leadsTable = document.querySelector('table tbody');
+            const leadsRows = document.querySelectorAll('tr[data-x--people-list--row]');
+            const scrollableMain = document.querySelector('main.scaffold-layout__main');
+            
+            // Find the actual scrollable element - Sales Navigator often uses the main element
+            let scrollElement = document.documentElement;
+            let scrollContainer = 'document';
+            
+            // Check common Sales Navigator scroll containers
+            const possibleContainers = [
+              'main.scaffold-layout__main',
+              '.application-outlet__content',
+              '[data-x--infinite-scroll-container]',
+              '.scaffold-layout__list',
+              'main'
+            ];
+            
+            for (const selector of possibleContainers) {
+              const elem = document.querySelector(selector);
+              if (elem) {
+                const style = window.getComputedStyle(elem);
+                if (style.overflowY === 'auto' || style.overflowY === 'scroll' || elem.scrollHeight > elem.clientHeight) {
+                  scrollElement = elem;
+                  scrollContainer = selector;
+                  break;
+                }
+              }
+            }
+            
+            // If still using document, check if body or html has scroll
+            if (scrollContainer === 'document') {
+              const bodyStyle = window.getComputedStyle(document.body);
+              const htmlStyle = window.getComputedStyle(document.documentElement);
+              
+              if (bodyStyle.overflowY === 'auto' || bodyStyle.overflowY === 'scroll') {
+                scrollContainer = 'body';
+                scrollElement = document.body;
+              }
+            }
+            
+            return {
+              hasLeadsTable: !!leadsTable,
+              currentLeadCount: leadsRows.length,
+              hasScrollableMain: !!scrollableMain,
+              scrollContainer,
+              initialHeight: scrollElement.scrollHeight || document.documentElement.scrollHeight,
+              clientHeight: scrollElement.clientHeight || window.innerHeight,
+              viewportHeight: window.innerHeight,
+              url: window.location.href,
+              overflow: scrollElement ? window.getComputedStyle(scrollElement).overflowY : 'visible'
+            };
+          });
+          
+          console.log(`[Worker ${workerId}] Page info:`, pageInfo);
+          
           const screenshots = [];
           const MAX_SCREENSHOTS = 10;
           let lastScrollHeight = 0;
-          let currentScrollPosition = 0;
           let noNewContentCount = 0;
           
           // Scroll to top first
-          await page.evaluate(() => window.scrollTo(0, 0));
+          await page.evaluate((container) => {
+            if (container === 'document') {
+              window.scrollTo(0, 0);
+            } else if (container === 'body') {
+              document.body.scrollTop = 0;
+            } else {
+              const elem = document.querySelector(container);
+              if (elem) elem.scrollTop = 0;
+            }
+          }, pageInfo.scrollContainer);
           await page.waitForTimeout(200);
           
-          console.log(`[Worker ${workerId}] Starting dynamic scroll capture...`);
+          console.log(`[Worker ${workerId}] Starting dynamic scroll capture on container: ${pageInfo.scrollContainer}...`);
           
           // Keep scrolling until we hit the bottom or max screenshots
           for (let i = 0; i < MAX_SCREENSHOTS; i++) {
@@ -498,27 +567,56 @@ If you cannot find any people/profiles, return: []`
             console.log(`[Worker ${workerId}] Captured screenshot ${i + 1}, size: ${screenshot.length} bytes`);
             
             // Check current scroll state and scroll down
-            const scrollInfo = await page.evaluate(() => {
-              const beforeHeight = document.documentElement.scrollHeight;
-              const viewportHeight = window.innerHeight;
-              const currentScroll = window.pageYOffset || document.documentElement.scrollTop;
+            const scrollInfo = await page.evaluate((container) => {
+              let scrollElement = document.documentElement;
+              
+              if (container === 'body') {
+                scrollElement = document.body;
+              } else if (container !== 'document') {
+                scrollElement = document.querySelector(container);
+                if (!scrollElement) scrollElement = document.documentElement;
+              }
+              
+              // Get current lead count before scrolling
+              const leadCountBefore = document.querySelectorAll('tr[data-x--people-list--row]').length;
+              
+              const beforeHeight = scrollElement.scrollHeight || document.documentElement.scrollHeight;
+              const viewportHeight = scrollElement.clientHeight || window.innerHeight;
+              const currentScroll = scrollElement.scrollTop || window.pageYOffset || 0;
               
               // Scroll down by 80% of viewport
               const scrollAmount = Math.floor(viewportHeight * 0.8);
-              window.scrollTo(0, currentScroll + scrollAmount);
               
-              // Return info about the scroll
+              if (container === 'document') {
+                window.scrollTo(0, currentScroll + scrollAmount);
+              } else if (container === 'body') {
+                document.body.scrollTop = currentScroll + scrollAmount;
+                window.scrollTo(0, currentScroll + scrollAmount); // Try both methods
+              } else {
+                scrollElement.scrollTop = currentScroll + scrollAmount;
+              }
+              
+              const newScroll = scrollElement.scrollTop || window.pageYOffset || document.documentElement.scrollTop || 0;
+              const afterHeight = scrollElement.scrollHeight || document.documentElement.scrollHeight;
+              
+              // Check if at bottom
+              const isAtBottom = (newScroll + viewportHeight) >= (afterHeight - 10);
+              
               return {
+                container,
+                leadCountBefore,
                 beforeHeight,
                 viewportHeight,
+                scrolledFrom: currentScroll,
                 scrolledTo: currentScroll + scrollAmount,
-                actualScroll: window.pageYOffset || document.documentElement.scrollTop,
-                afterHeight: document.documentElement.scrollHeight,
-                isAtBottom: (window.pageYOffset + window.innerHeight) >= (document.documentElement.scrollHeight - 10)
+                actualScroll: newScroll,
+                afterHeight,
+                isAtBottom,
+                didScroll: newScroll > currentScroll
               };
-            });
+            }, pageInfo.scrollContainer);
             
-            console.log(`[Worker ${workerId}] Scroll ${i + 1}: height ${scrollInfo.beforeHeight}px -> ${scrollInfo.afterHeight}px, scrolled to ${scrollInfo.actualScroll}px, at bottom: ${scrollInfo.isAtBottom}`);
+            console.log(`[Worker ${workerId}] Scroll ${i + 1}: container="${scrollInfo.container}", leads: ${scrollInfo.leadCountBefore}, height ${scrollInfo.beforeHeight}px -> ${scrollInfo.afterHeight}px, scrolled from ${scrollInfo.scrolledFrom}px to ${scrollInfo.actualScroll}px (requested ${scrollInfo.scrolledTo}px), at bottom: ${scrollInfo.isAtBottom}, did scroll: ${scrollInfo.didScroll}`);
             
             // Wait for new content to load
             await page.waitForTimeout(300);
@@ -534,6 +632,11 @@ If you cannot find any people/profiles, return: []`
               console.log(`[Worker ${workerId}] New content loaded: ${lastScrollHeight}px -> ${newHeight}px`);
             }
             lastScrollHeight = newHeight;
+            
+            // Check if scrolling is not working at all
+            if (!scrollInfo.didScroll && scrollInfo.beforeHeight < 1000) {
+              console.log(`[Worker ${workerId}] Warning: Page appears to have no scrollable content (height: ${scrollInfo.beforeHeight}px). May need to wait for content to load.`);
+            }
             
             // Stop if we're at the bottom or no new content after 3 tries
             if (scrollInfo.isAtBottom || noNewContentCount >= 3) {
