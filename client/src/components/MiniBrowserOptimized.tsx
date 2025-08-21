@@ -18,9 +18,9 @@ export default function MiniBrowserOptimized() {
   const [showLeadScanner, setShowLeadScanner] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([
     {
-      title: 'Pratyush Chakraborty LinkedIn profile',
-      link: 'https://www.linkedin.com/in/pratyush-chakraborty',
-      snippet: 'Pratyush Chakraborty - Facebook, LinkedIn - MathEcon + AI @ Penn',
+      title: 'LinkedIn Sales Navigator',
+      link: 'https://www.linkedin.com/sales/',
+      snippet: 'LinkedIn Sales Navigator - Advanced sales intelligence and outreach',
       source: 'linkedin',
       favicon: null
     },
