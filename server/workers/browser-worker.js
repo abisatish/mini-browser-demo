@@ -494,28 +494,63 @@ If you cannot find any people/profiles, return: []`
           console.log(`[Worker ${workerId}] Page info: ${pageInfo.leadCount} leads, height: ${pageInfo.scrollHeight}px, viewport: ${pageInfo.viewportHeight}px`);
           
           // Take FULL PAGE screenshot - captures entire 2688px or whatever the full height is
-          console.log(`[Worker ${workerId}] Capturing full page screenshot (expected height: ${pageInfo.scrollHeight}px)...`);
+          console.log(`[Worker ${workerId}] Capturing full page screenshot...`);
+          console.log(`[Worker ${workerId}] Expected capture: 1280 x ${pageInfo.scrollHeight} pixels`);
+          
           const fullPageScreenshot = await page.screenshot({ 
             type: 'jpeg', 
             quality: 80,
             fullPage: true  // This captures the ENTIRE page height
           });
           
+          // Function to extract JPEG dimensions from buffer
+          function getJpegDimensions(buffer) {
+            // JPEG format: SOI marker (FFD8) followed by segments
+            // We're looking for SOF0 (FFC0) or SOF2 (FFC2) markers which contain dimensions
+            let i = 2; // Skip SOI marker
+            while (i < buffer.length - 9) {
+              if (buffer[i] === 0xFF) {
+                const marker = buffer[i + 1];
+                // SOF0 (baseline) or SOF2 (progressive) markers
+                if (marker === 0xC0 || marker === 0xC2) {
+                  // Height is at offset 5-6, Width at 7-8 from marker
+                  const height = (buffer[i + 5] << 8) | buffer[i + 6];
+                  const width = (buffer[i + 7] << 8) | buffer[i + 8];
+                  return { width, height };
+                }
+                // Skip to next segment
+                const segmentLength = (buffer[i + 2] << 8) | buffer[i + 3];
+                i += segmentLength + 2;
+              } else {
+                i++;
+              }
+            }
+            return { width: 0, height: 0 };
+          }
+          
+          // Get actual dimensions from the JPEG buffer
+          const actualDimensions = getJpegDimensions(fullPageScreenshot);
+          
           // Get the actual dimensions of the screenshot
-          // JPEG doesn't have easy dimension access, but we can estimate based on viewport width
           const screenshotInfo = {
             bytes: fullPageScreenshot.length,
+            actualWidth: actualDimensions.width,
+            actualHeight: actualDimensions.height,
             expectedHeight: pageInfo.scrollHeight,
             viewportHeight: pageInfo.viewportHeight,
             viewportWidth: 1280,  // We set this to 1280 in browser config
-            estimatedPixels: pageInfo.scrollHeight * 1280
+            estimatedPixels: pageInfo.scrollHeight * 1280,
+            actualPixels: actualDimensions.width * actualDimensions.height
           };
           
           console.log(`[Worker ${workerId}] ✅ Full page screenshot captured:`);
           console.log(`[Worker ${workerId}]   - File size: ${screenshotInfo.bytes} bytes`);
-          console.log(`[Worker ${workerId}]   - Expected dimensions: ${screenshotInfo.viewportWidth}px wide x ${screenshotInfo.expectedHeight}px tall`);
-          console.log(`[Worker ${workerId}]   - Total pixels captured: ~${(screenshotInfo.estimatedPixels / 1000000).toFixed(1)} megapixels`);
+          console.log(`[Worker ${workerId}]   - ACTUAL dimensions: ${screenshotInfo.actualWidth} x ${screenshotInfo.actualHeight} pixels`);
+          console.log(`[Worker ${workerId}]   - Expected dimensions: 1280 x ${screenshotInfo.expectedHeight} pixels`);
+          console.log(`[Worker ${workerId}]   - Dimension match: ${screenshotInfo.actualHeight === screenshotInfo.expectedHeight ? '✅ YES' : '❌ NO'}`);
+          console.log(`[Worker ${workerId}]   - Actual pixels: ${(screenshotInfo.actualPixels / 1000000).toFixed(1)} megapixels`);
           console.log(`[Worker ${workerId}]   - Page had ${pageInfo.leadCount} leads visible`);
+          console.log(`[Worker ${workerId}]   - Bytes per pixel: ${(screenshotInfo.bytes / screenshotInfo.actualPixels).toFixed(3)}`);
           
           const screenshots = [fullPageScreenshot];
           
