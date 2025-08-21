@@ -570,26 +570,43 @@ If you cannot find any people/profiles, return: []`
           
           for (let i = 0; i < MAX_SCREENSHOTS - 1; i++) {  // -1 because we already took initial screenshot
             
-            // LinkedIn Sales Nav uses virtual scrolling - we need to scroll to the last visible lead
+            // LinkedIn Sales Nav uses virtual scrolling - we need to scroll the table wrapper
             const scrollInfo = await page.evaluate(() => {
               // Find all lead rows
               const leadRows = document.querySelectorAll('tr[data-x--people-list--row]');
               const leadCountBefore = leadRows.length;
               
-              // Get the last lead row
-              const lastLead = leadRows[leadRows.length - 1];
+              // Find the scrollable container - it's the table wrapper
+              const tableWrapper = document.querySelector('.models-table-wrapper');
+              const table = document.querySelector('table.people-list-detail__table');
               
-              // Scroll to the last lead to trigger loading more
-              if (lastLead) {
-                lastLead.scrollIntoView({ behavior: 'instant', block: 'end' });
+              let scrolled = false;
+              let currentScroll = 0;
+              let scrollHeight = 0;
+              
+              if (tableWrapper) {
+                // The table wrapper is the scrollable element
+                const beforeScroll = tableWrapper.scrollTop;
+                tableWrapper.scrollTop = tableWrapper.scrollTop + window.innerHeight * 0.8;
+                currentScroll = tableWrapper.scrollTop;
+                scrollHeight = tableWrapper.scrollHeight;
+                scrolled = true;
+              } else if (table) {
+                // Try scrolling the last row into view
+                const lastLead = leadRows[leadRows.length - 1];
+                if (lastLead) {
+                  lastLead.scrollIntoView({ behavior: 'instant', block: 'end' });
+                  scrolled = true;
+                }
+                currentScroll = window.pageYOffset || document.documentElement.scrollTop || 0;
+                scrollHeight = document.documentElement.scrollHeight;
               } else {
-                // Fallback to regular scroll
+                // Fallback to window scroll
                 window.scrollBy(0, window.innerHeight * 0.8);
+                currentScroll = window.pageYOffset || document.documentElement.scrollTop || 0;
+                scrollHeight = document.documentElement.scrollHeight;
               }
               
-              // Get scroll info after scrolling
-              const currentScroll = window.pageYOffset || document.documentElement.scrollTop || 0;
-              const scrollHeight = document.documentElement.scrollHeight;
               const viewportHeight = window.innerHeight;
               
               // Check if there's a "load more" button or spinner
@@ -602,7 +619,8 @@ If you cannot find any people/profiles, return: []`
                 scrolledTo: currentScroll,
                 scrollHeight,
                 viewportHeight,
-                hasLastLead: !!lastLead,
+                hasTableWrapper: !!tableWrapper,
+                scrolled,
                 hasMoreIndicator,
                 lastLeadIndex: leadRows.length - 1
               };
