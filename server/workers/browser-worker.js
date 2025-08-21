@@ -474,63 +474,72 @@ If you cannot find any people/profiles, return: []`
           const currentUrl = page.url();
           console.log(`[Worker ${workerId}] Scanning profile on page: ${currentUrl}`);
           
-          // Get page dimensions and viewport
-          const dimensions = await page.evaluate(() => ({
-            scrollHeight: document.documentElement.scrollHeight,
-            clientHeight: window.innerHeight,
-            scrollWidth: document.documentElement.scrollWidth,
-            clientWidth: window.innerWidth
-          }));
-          
-          console.log(`[Worker ${workerId}] Page dimensions:`, dimensions);
-          
-          // Calculate scroll steps (overlap slightly to not miss content)
-          const scrollStep = Math.floor(dimensions.clientHeight * 0.8); // 80% of viewport height for overlap
-          let totalScrolls = Math.ceil(dimensions.scrollHeight / scrollStep);
-          
-          // Limit to max 10 screenshots to avoid API limits
-          const MAX_SCREENSHOTS = 10;
-          if (totalScrolls > MAX_SCREENSHOTS) {
-            console.log(`[Worker ${workerId}] Limiting screenshots from ${totalScrolls} to ${MAX_SCREENSHOTS}`);
-            totalScrolls = MAX_SCREENSHOTS;
-          }
-          
           const screenshots = [];
-          
-          console.log(`[Worker ${workerId}] Will take ${totalScrolls} screenshots with ${scrollStep}px steps`);
+          const MAX_SCREENSHOTS = 10;
+          let lastScrollHeight = 0;
+          let currentScrollPosition = 0;
+          let noNewContentCount = 0;
           
           // Scroll to top first
           await page.evaluate(() => window.scrollTo(0, 0));
-          await page.waitForTimeout(200); // Quick settle
+          await page.waitForTimeout(200);
           
-          // Take screenshots while scrolling
-          for (let i = 0; i < totalScrolls; i++) {
-            const scrollPosition = i * scrollStep;
-            
-            // Scroll to position and verify it actually scrolled
-            const actualScroll = await page.evaluate((pos) => {
-              window.scrollTo(0, pos);
-              return {
-                requestedScroll: pos,
-                actualScroll: window.pageYOffset || document.documentElement.scrollTop,
-                maxScroll: document.documentElement.scrollHeight - window.innerHeight
-              };
-            }, scrollPosition);
-            
-            console.log(`[Worker ${workerId}] Scroll ${i + 1}: requested ${actualScroll.requestedScroll}px, actual ${actualScroll.actualScroll}px, max ${actualScroll.maxScroll}px`);
-            
-            // Minimal wait for content to render
-            await page.waitForTimeout(150);
-            
+          console.log(`[Worker ${workerId}] Starting dynamic scroll capture...`);
+          
+          // Keep scrolling until we hit the bottom or max screenshots
+          for (let i = 0; i < MAX_SCREENSHOTS; i++) {
             // Take screenshot of current viewport
             const screenshot = await page.screenshot({ 
               type: 'jpeg', 
-              quality: 60, // Lower quality for faster capture and smaller size
-              fullPage: false // Just viewport
+              quality: 60,
+              fullPage: false
+            });
+            screenshots.push(screenshot);
+            console.log(`[Worker ${workerId}] Captured screenshot ${i + 1}, size: ${screenshot.length} bytes`);
+            
+            // Check current scroll state and scroll down
+            const scrollInfo = await page.evaluate(() => {
+              const beforeHeight = document.documentElement.scrollHeight;
+              const viewportHeight = window.innerHeight;
+              const currentScroll = window.pageYOffset || document.documentElement.scrollTop;
+              
+              // Scroll down by 80% of viewport
+              const scrollAmount = Math.floor(viewportHeight * 0.8);
+              window.scrollTo(0, currentScroll + scrollAmount);
+              
+              // Return info about the scroll
+              return {
+                beforeHeight,
+                viewportHeight,
+                scrolledTo: currentScroll + scrollAmount,
+                actualScroll: window.pageYOffset || document.documentElement.scrollTop,
+                afterHeight: document.documentElement.scrollHeight,
+                isAtBottom: (window.pageYOffset + window.innerHeight) >= (document.documentElement.scrollHeight - 10)
+              };
             });
             
-            screenshots.push(screenshot);
-            console.log(`[Worker ${workerId}] Captured screenshot ${i + 1}/${totalScrolls}, size: ${screenshot.length} bytes`);
+            console.log(`[Worker ${workerId}] Scroll ${i + 1}: height ${scrollInfo.beforeHeight}px -> ${scrollInfo.afterHeight}px, scrolled to ${scrollInfo.actualScroll}px, at bottom: ${scrollInfo.isAtBottom}`);
+            
+            // Wait for new content to load
+            await page.waitForTimeout(300);
+            
+            // Check if new content loaded
+            const newHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+            
+            if (newHeight === lastScrollHeight) {
+              noNewContentCount++;
+              console.log(`[Worker ${workerId}] No new content loaded (${noNewContentCount}/3)`);
+            } else {
+              noNewContentCount = 0;
+              console.log(`[Worker ${workerId}] New content loaded: ${lastScrollHeight}px -> ${newHeight}px`);
+            }
+            lastScrollHeight = newHeight;
+            
+            // Stop if we're at the bottom or no new content after 3 tries
+            if (scrollInfo.isAtBottom || noNewContentCount >= 3) {
+              console.log(`[Worker ${workerId}] Reached end of page or no new content. Stopping.`);
+              break;
+            }
           }
           
           // Scroll back to top
