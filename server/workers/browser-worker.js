@@ -357,57 +357,26 @@ async function executeBrowserCommand(browserId, command) {
         break;
         
       case 'scanLeads':
-        console.log(`[Worker ${workerId}] Starting Sales Navigator lead scan`);
+        console.log(`[Worker ${workerId}] Starting lead scan`);
         
         try {
           const currentUrl = page.url();
+          console.log(`[Worker ${workerId}] Scanning leads on page: ${currentUrl}`);
           
-          // No URL requirement - scan any page
-          console.log(`[Worker ${workerId}] Scanning page: ${currentUrl}`);
-          
-          
-          // Take full page screenshot
-          console.log(`[Worker ${workerId}] Capturing full page screenshot...`);
+          // Take full page screenshot (exact same as profile scanner)
+          console.log(`[Worker ${workerId}] Capturing full page screenshot for leads...`);
           const screenshot = await page.screenshot({ 
             type: 'jpeg', 
             quality: 80,
             fullPage: true
           });
-          console.log(`[Worker ${workerId}] Screenshot captured, size: ${screenshot.length} bytes`);
-          
-          // Debug: Check what lead items are actually visible
-          const leadCount = await page.evaluate(() => {
-            const selectors = [
-              '.artdeco-list__item',
-              '[data-test-lead-list-item]', 
-              '[data-control-name="lead_list_item"]',
-              '.search-results__result-item',
-              '.entity-result__item'
-            ];
-            
-            let count = 0;
-            let selector = '';
-            for (const sel of selectors) {
-              const elements = document.querySelectorAll(sel);
-              if (elements.length > 0) {
-                count = elements.length;
-                selector = sel;
-                break;
-              }
-            }
-            
-            return { count, selector };
-          });
-          
-          console.log(`[Worker ${workerId}] Debug: Found ${leadCount.count} leads using selector: ${leadCount.selector}`);
+          console.log(`[Worker ${workerId}] Lead screenshot captured, size: ${screenshot.length} bytes`);
           
           // Import AI SDKs
           const { default: Anthropic } = await import('@anthropic-ai/sdk');
           const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({
             apiKey: process.env.ANTHROPIC_API_KEY
           }) : null;
-          
-          // We don't have OpenAI in worker, but can add fallback if needed
           
           if (!anthropic) {
             console.log(`[Worker ${workerId}] No AI client configured`);
@@ -416,22 +385,13 @@ async function executeBrowserCommand(browserId, command) {
             break;
           }
           
-          console.log(`[Worker ${workerId}] 🔵 API: Screenshot size before encoding:`, screenshot.length);
-          
-          let content;
-          
-          // Try Claude (following exact pattern from extractLinkedInDataFromScreenshot)
-          if (anthropic) {
-            console.log(`[Worker ${workerId}] 🔵 API: Using Claude for Sales Navigator analysis`);
-            console.log(`[Worker ${workerId}] 🔵 API: Anthropic client exists:`, !!anthropic);
-            console.log(`[Worker ${workerId}] 🔵 API: Anthropic API key exists:`, !!process.env.ANTHROPIC_API_KEY);
-            console.log(`[Worker ${workerId}] 🔵 API: Screenshot size:`, screenshot.length, 'bytes');
+          console.log(`[Worker ${workerId}] 🔵 API: Using Claude for lead analysis`);
             
-            try {
-              console.log(`[Worker ${workerId}] 🔵 API: Preparing Claude request...`);
-              const startTime = Date.now();
+          try {
+            console.log(`[Worker ${workerId}] 🔵 API: Preparing Claude request for leads...`);
+            const startTime = Date.now();
               
-              const claudeResponse = await anthropic.messages.create({
+            const claudeResponse = await anthropic.messages.create({
                 model: "claude-3-5-sonnet-20241022",
                 max_tokens: 1000,
                 temperature: 0.3,
@@ -471,48 +431,33 @@ If you cannot find any people/profiles, return: []`
                 }]
               });
               
-              const endTime = Date.now();
-              console.log(`[Worker ${workerId}] 🔵 API: Claude API call completed in:`, endTime - startTime, 'ms');
-              console.log(`[Worker ${workerId}] 🔵 API: Claude response object:`, JSON.stringify({
-                id: claudeResponse.id,
-                type: claudeResponse.type,
-                role: claudeResponse.role,
-                model: claudeResponse.model,
-                stop_reason: claudeResponse.stop_reason,
-                usage: claudeResponse.usage,
-                content_length: claudeResponse.content?.length
-              }, null, 2));
+            const endTime = Date.now();
+            console.log(`[Worker ${workerId}] 🔵 API: Claude API call completed in:`, endTime - startTime, 'ms');
+            
+            const content = claudeResponse.content[0].text;
+            console.log(`[Worker ${workerId}] 🔵 API: Claude extracted leads text:`, content);
+            
+            // Parse response
+            try {
+              const jsonMatch = content.match(/\[[\s\S]*\]/) || [null, content];
+              const jsonString = jsonMatch[0] || content;
+              const leads = JSON.parse(jsonString.trim());
               
-              content = claudeResponse.content[0].text;
-              console.log(`[Worker ${workerId}] 🔵 API: Claude extracted text:`, content);
-              console.log(`[Worker ${workerId}] 🔵 API: Content length:`, content.length, 'characters');
+              console.log(`[Worker ${workerId}] 🔵 API: Successfully parsed ${leads.length} leads`);
+              response.type = 'leadsAnalysis';
+              response.leads = leads;
               
-            } catch (claudeError) {
-              console.error(`[Worker ${workerId}] 🔵 API: Claude error occurred`);
-              console.error(`[Worker ${workerId}] 🔵 API: Error name:`, claudeError.name);
-              console.error(`[Worker ${workerId}] 🔵 API: Error message:`, claudeError.message);
-              console.error(`[Worker ${workerId}] 🔵 API: Error stack:`, claudeError.stack);
-              if (claudeError.response) {
-                console.error(`[Worker ${workerId}] 🔵 API: Error response:`, claudeError.response);
-              }
-              throw claudeError;
+            } catch (e) {
+              console.error(`[Worker ${workerId}] 🔵 API: Failed to parse Claude response:`, content);
+              response.type = 'leadsAnalysis';
+              response.error = 'Failed to parse lead data from screenshot';
             }
-          }
-          
-          // Parse response (following exact pattern from extractLinkedInDataFromScreenshot)
-          try {
-            const jsonMatch = content.match(/\[[\s\S]*\]/) || [null, content];
-            const jsonString = jsonMatch[0] || content;
-            const leads = JSON.parse(jsonString.trim());
             
-            console.log(`[Worker ${workerId}] 🔵 API: Successfully parsed ${leads.length} leads`);
+          } catch (claudeError) {
+            console.error(`[Worker ${workerId}] 🔵 API: Claude error occurred`);
+            console.error(`[Worker ${workerId}] 🔵 API: Error message:`, claudeError.message);
             response.type = 'leadsAnalysis';
-            response.leads = leads;
-            
-          } catch (e) {
-            console.error(`[Worker ${workerId}] 🔵 API: Failed to parse Claude response:`, content);
-            response.type = 'leadsAnalysis';
-            response.error = 'Failed to parse lead data from screenshot';
+            response.error = claudeError.message || 'Failed to analyze leads';
           }
           
         } catch (error) {
